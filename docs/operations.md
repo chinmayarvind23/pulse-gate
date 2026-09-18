@@ -1,8 +1,12 @@
 # Operations
 
+The gateway receives messages, Redis keeps the shared queue and event records, and workers process waiting events. Docker Compose starts these services together. The Kubernetes section provides another way to run them with separate service replicas.
+
 ## Docker Compose
 
-Copy `.env.example` to `.env` and replace the placeholders. Run `docker compose up --build -d`. Compose starts Redis, gateway, worker, Prometheus and Grafana. Redis uses a named volume and append-only persistence. `docker compose down` preserves the volume; deleting the volume deletes local state.
+Copy `.env.example` to `.env` and replace the placeholders. Run `docker compose up --build -d`. Compose starts Redis, the gateway, the worker, Prometheus and Grafana.
+
+Redis saves its data in a Docker volume and records changes in an append-only file. `docker compose down` stops the services but keeps that data for the next start. Deleting the volume deletes the saved event records and decisions.
 
 | Local endpoint | Purpose |
 | --- | --- |
@@ -12,7 +16,9 @@ Copy `.env.example` to `.env` and replace the placeholders. Run `docker compose 
 | http://localhost:3000 | Grafana |
 | localhost:16380 | Redis for local inspection |
 
-Docker binds these ports to loopback. Grafana's anonymous role is read-only. Do not expose this local configuration directly to an untrusted network.
+These ports listen only on your own machine. Grafana allows visitors to view the dashboard without logging in, but they cannot edit it. Keep this local setup off untrusted networks.
+
+Use these commands to check running services, recent logs and waiting work:
 
 ```sh
 docker compose ps
@@ -21,7 +27,9 @@ docker compose exec redis redis-cli XLEN payment_events
 docker compose exec redis redis-cli XPENDING payment_events risk-workers
 ```
 
-`XLEN` shows outstanding work because completion removes the input entry after acknowledgement. `XPENDING` shows deliveries already assigned to workers. The dashboard includes admission activity, errors, outstanding work and worker recovery counters.
+`XLEN` counts unfinished events. `XPENDING` counts events that a worker has picked up but has not finished. After processing catches up, both should return zero. During traffic or a restart, they can temporarily increase.
+
+The dashboard shows incoming requests, errors, waiting work and events recovered from stopped workers. If the queue keeps growing, workers are falling behind or cannot finish their work; check their logs and readiness.
 
 ## Configuration
 
@@ -31,25 +39,29 @@ docker compose exec redis redis-cli XPENDING payment_events risk-workers
 | PULSEGATE_REDIS_ADDR | Redis host and port |
 | PULSEGATE_STREAM | `payment_events`, input stream |
 | PULSEGATE_RESULT_STREAM | `risk_decisions`, output stream; must differ from input |
-| PULSEGATE_IDEMPOTENCY_TTL_SECONDS | `86400`, replay retention |
+| PULSEGATE_IDEMPOTENCY_TTL_SECONDS | `86400`, how long Redis remembers IDs to recognize repeats |
 | PULSEGATE_MAX_BODY_BYTES | `65536`, gateway body limit |
-| PULSEGATE_MAX_QUEUE | `1000000`, outstanding-entry limit |
-| PULSEGATE_WORKER_GROUP | `risk-workers`, the single consuming workflow |
+| PULSEGATE_MAX_QUEUE | `1000000`, maximum number of unfinished events |
+| PULSEGATE_WORKER_GROUP | `risk-workers`, the workers sharing this queue |
 | PULSEGATE_WORKER_CONSUMER | Unique host/process identity unless explicitly supplied |
 | PULSEGATE_WORKER_BATCH | `256`, capped at 1024 |
-| PULSEGATE_RECLAIM_IDLE_MS | `5000`, idle interval before reclaiming pending work |
+| PULSEGATE_RECLAIM_IDLE_MS | `5000`, how long assigned work can sit idle before another worker can pick it up |
 
 Compose sets service addresses explicitly. Supply additional variables to both gateway and worker when changing stream or retention settings. Do not give replicas the same explicit consumer name.
 
 ## Recovery and storage
 
-Admission compares a canonical payload digest with the identifier's retained digest. If the append fails, its new marker is removed. Completion writes a decision, keeps a completion marker, acknowledges and removes input work under Redis isolation. Reclaimed deliveries cannot append a second retained decision. Invalid stream payloads go to the result stream's `:dead` companion.
+For each new event, Redis keeps a record of its ID and a fingerprint of its fields. A retry with the same fields is recognized as a repeat. Different fields under the same retained ID produce a conflict. If queueing fails after a new record is created, that record is removed so the sender can try again.
 
-Transport deadlines and explicit connection replacement allow workers to reconnect after the Redis endpoint changes. A worker shutdown leaves unfinished deliveries pending for another worker. Liveness is separate from readiness so a Redis interruption does not require restarting every application process.
+A worker saves the decision and a completion record, then marks the queued event finished and removes it. Redis runs these steps without another client interrupting them. If the event is picked up again while its completion record is retained, the worker does not publish another decision. Invalid data found in the queue goes to a separate `:dead` stream for inspection.
 
-The input stream supports one business consumer group. Completion deletes entries, so a second independent consuming workflow must use its own stream. Decisions have a bounded recent-history window. Idempotency markers expire. Very late replays and deleting Redis data are outside the retained-state guarantee.
+When a worker stops, its unfinished events remain assigned but incomplete, or *pending*. Another worker can pick them up after the idle interval. Workers also replace failed Redis connections so they can reconnect when Redis moves to a new address.
 
-AOF synchronizes every second. Host failure can lose recent acknowledged writes even though normal process and pod replacements preserve them. Redis is a single local dependency, not a replicated ledger.
+Health checks separate a running process from one that is ready to work. A Redis interruption can make a service unready without requiring that process to restart.
+
+The queue supports one group of workers sharing the same job. Finished entries are deleted, so a second independent workflow needs its own stream. Only recent decisions are kept, and records used to recognize repeats expire. Very late retries or deleting Redis data can therefore cause an event to be treated as new.
+
+Redis requests a disk sync once per second. A host failure can lose recent accepted events even though ordinary process and pod replacements preserve saved data. This local setup uses one Redis instance and does not provide a replicated financial ledger.
 
 ## Kubernetes
 
@@ -66,11 +78,13 @@ kubectl -n pulsegate rollout status deployment/risk-worker
 kubectl -n pulsegate port-forward service/gateway 8080:80
 ```
 
-A default dynamic StorageClass is required for the Redis PVC. Redis uses a Recreate strategy because two processes must not write the same append-only directory. The application containers run as non-root with dropped capabilities and read-only root filesystems. Startup, readiness and liveness probes have separate purposes.
+A default dynamic StorageClass must be available so Kubernetes can allocate storage for Redis's persistent volume claim (PVC). This lets Redis reuse its saved files after a pod is replaced. Redis uses the Recreate strategy to stop the old process before starting another one on the same files.
 
-The CPU-based HPAs require metrics-server. Confirm resource readings with `kubectl top pods -n pulsegate` and inspect `kubectl get hpa -n pulsegate`. CPU autoscaling is a capacity aid; use queue and pending-work inspection when diagnosing stalled processing.
+Application containers run without root privileges, with reduced permissions and a read-only root filesystem. Startup probes allow time to start, readiness probes decide whether a service can receive work, and liveness probes detect a process that no longer answers.
 
-Apply the observability resources to provision Prometheus pod discovery and the Grafana dashboard:
+Horizontal Pod Autoscalers (HPAs) adjust the number of application replicas using CPU readings. They require metrics-server. Confirm the readings with `kubectl top pods -n pulsegate` and inspect the policies with `kubectl get hpa -n pulsegate`. CPU readings alone do not explain a stuck queue; also check unfinished and pending events.
+
+Apply these resources to let Prometheus find the application pods and load the Grafana dashboard:
 
 ```sh
 kubectl apply -f infra/k8s/observability.json
