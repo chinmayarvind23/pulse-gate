@@ -76,10 +76,6 @@ artifacts/benchmarks/      generated benchmark evidence, never hand-edited
 
 Systems evaluation records throughput, p50/p95/p99 acknowledgement latency, error rate, duplicate acceptance rate, queue lag and recovery time. ML evaluation records precision, recall, F1, false-positive rate, calibration and inference latency against a deterministic rules baseline.
 
-## Scope decisions
-
-The portfolio version deliberately avoids Kafka, Flink, Postgres, a service mesh, Terraform and an LLM. Those tools may be appropriate at larger scale, but they would make a 3 to 4 hour implementation harder to understand without improving the core proof. Production alternatives are documented in [system design](docs/system-design.md) and the ADRs.
-
 ## Documentation
 
 Start with [docs/README.md](docs/README.md), then read [PRD](docs/PRD.md), [system design](docs/system-design.md), [LLD](docs/LLD.md), and [evaluation](docs/evaluation.md).
