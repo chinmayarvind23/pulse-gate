@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gateway, namespace: pulsegate}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: gateway}}
+  template:
+    metadata: {labels: {app: gateway}}
+    spec:
+      containers:
+        - name: gateway
+          image: pulsegate/gateway:local
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: PULSEGATE_REDIS_ADDR, value: "redis:6379"}
+            - {name: PULSEGATE_HMAC_SECRET, valueFrom: {secretKeyRef: {name: pulsegate-secrets, key: hmac-secret}}}
+          readinessProbe: {httpGet: {path: /readyz, port: 8080}, initialDelaySeconds: 1, periodSeconds: 2}
+          livenessProbe: {httpGet: {path: /healthz, port: 8080}, initialDelaySeconds: 3, periodSeconds: 5}
+          resources:
+            requests: {cpu: 250m, memory: 64Mi}
+            limits: {cpu: "2", memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gateway, namespace: pulsegate}
+spec:
+  selector: {app: gateway}
+  ports: [{port: 80, targetPort: 8080}]
