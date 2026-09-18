@@ -69,7 +69,6 @@ scripts/                  synthetic data, smoke, load and failure tools
 infra/k8s/                Kubernetes manifests
 infra/prometheus/         local scrape configuration
 docs/                     PRD, design, ADRs, reliability, security, metrics
-artifacts/benchmarks/      generated benchmark evidence, never hand-edited
 ```
 
 ## Evaluation
