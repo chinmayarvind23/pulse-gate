@@ -15,6 +15,7 @@ type Config struct {
 	ResultStream   string
 	IdempotencyTTL time.Duration
 	MaxBodyBytes   int64
+	MaxQueue       int64
 }
 
 // Load converts environment text into one validated configuration value. Keeping
@@ -29,6 +30,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	maxQueue, err := intEnv("PULSEGATE_MAX_QUEUE", 1000000)
+	if err != nil || maxQueue <= 0 {
+		return Config{}, fmt.Errorf("PULSEGATE_MAX_QUEUE must be positive")
+	}
 
 	cfg := Config{
 		ListenAddr:     env("PULSEGATE_LISTEN_ADDR", ":8080"),
@@ -38,11 +43,15 @@ func Load() (Config, error) {
 		ResultStream:   env("PULSEGATE_RESULT_STREAM", "risk_decisions"),
 		IdempotencyTTL: time.Duration(ttlSeconds) * time.Second,
 		MaxBodyBytes:   int64(maxBody),
+		MaxQueue:       int64(maxQueue),
+	}
+	if cfg.Stream == cfg.ResultStream {
+		return Config{}, fmt.Errorf("input and result streams must differ")
 	}
 	if cfg.HMACSecret == "" {
 		return Config{}, fmt.Errorf("PULSEGATE_HMAC_SECRET is required")
 	}
-	if cfg.IdempotencyTTL <= 0 {
+	if ttlSeconds <= 0 || ttlSeconds > 31536000 {
 		return Config{}, fmt.Errorf("idempotency TTL must be positive")
 	}
 	if cfg.MaxBodyBytes <= 0 {
@@ -51,6 +60,7 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// env applies defaults only to unset or empty settings.
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
@@ -58,6 +68,7 @@ func env(name, fallback string) string {
 	return fallback
 }
 
+// intEnv reports configuration mistakes before the server admits traffic.
 func intEnv(name string, fallback int) (int, error) {
 	raw := os.Getenv(name)
 	if raw == "" {

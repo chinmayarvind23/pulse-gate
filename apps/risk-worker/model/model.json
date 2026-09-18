@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "model_version": "logreg-calibrated-v2",
+  "feature_version": "payment-risk-v1",
+  "feature_names": [
+    "amount_100k",
+    "night",
+    "card_not_present",
+    "non_us",
+    "velocity_5m_10",
+    "velocity_1h_30",
+    "declines_5"
+  ],
+  "weights": [
+    1.9520989945416278,
+    1.0032294689549075,
+    1.5015551911354097,
+    1.2138027434282923,
+    2.3241663320425854,
+    0.8883783456280958,
+    2.0913926772208615
+  ],
+  "intercept": -7.936039213608149,
+  "calibration_slope": 0.8986711543348067,
+  "calibration_intercept": -0.03011111039811328,
+  "threshold": 0.4739999999999999,
+  "training": {
+    "sklearn_version": "1.9.1",
+    "estimator": "LogisticRegression(C=1.0, max_iter=2000)",
+    "calibration": "FrozenEstimator + sigmoid",
+    "splits": {
+      "train": {
+        "seed": 1729,
+        "count": 12000,
+        "sha256": "2f7d9b9c844eef2fd10e79b771bc123880d56ac85741520f2b23441417b3b5b3"
+      },
+      "calibration": {
+        "seed": 1730,
+        "count": 4000,
+        "sha256": "d2b413974fcbffd6d4a4023ddfbba4c4140ed5b85d5750601e445c0a391aeebb"
+      },
+      "threshold": {
+        "seed": 1731,
+        "count": 4000,
+        "sha256": "76a6902b303fb74708be596bd9ea0ea3555a552c23edff85f010ba3e71044639"
+      }
+    }
+  }
+}

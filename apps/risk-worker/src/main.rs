@@ -1,103 +1,389 @@
-mod model;
-
-use std::{collections::HashMap, env, sync::Arc, time::Duration};
-use axum::{extract::State, http::StatusCode, routing::{get, post}, Json, Router};
-use model::{PaymentEvent, RiskDecision};
-use redis::{aio::MultiplexedConnection, streams::StreamReadReply, AsyncCommands, RedisResult};
-use serde::Serialize;
-use tokio::sync::Mutex;
+use axum::{
+    extract::{DefaultBodyLimit, State},
+    http::{header, StatusCode},
+    routing::{get, post},
+    Json, Router,
+};
+use pulsegate_risk_worker::model::{self, PaymentEvent, RiskDecision};
+use redis::{
+    aio::ConnectionManager,
+    streams::{StreamAutoClaimReply, StreamId, StreamReadReply},
+    AsyncCommands,
+};
+use std::{
+    env,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
+use tokio::sync::watch;
 use tracing::{error, info};
 
 #[derive(Clone)]
 struct AppState {
-    redis: Arc<Mutex<MultiplexedConnection>>,
-    result_stream: String,
+    redis: ConnectionManager,
+    config: Arc<Config>,
+    stats: Arc<Stats>,
+}
+struct Config {
+    stream: String,
+    result: String,
+    group: String,
+    consumer: String,
+    ttl: u64,
+    reclaim_ms: u64,
+    batch: usize,
+}
+#[derive(Default)]
+struct Stats {
+    ready: AtomicBool,
+    decisions: AtomicU64,
+    duplicates: AtomicU64,
+    dead: AtomicU64,
+    errors: AtomicU64,
+    reclaimed: AtomicU64,
 }
 
-#[derive(Serialize)]
-struct Health { status: &'static str }
+// Publish, mark and acknowledge under Redis isolation. A failed append removes its
+// marker. Redelivery after a lost response observes the marker and cannot republish.
+const FINISH: &str = r#"
+local input=KEYS[1]
+local output=KEYS[2]
+local done=KEYS[3]
+local old=redis.call('GET',done)
+if not old then
+ local t=redis.call('TYPE',output).ok
+ if t~='none' and t~='stream' then return redis.error_reply('output must be stream') end
+ redis.call('SET',done,'1','EX',ARGV[4])
+ local id=redis.pcall('XADD',output,'MAXLEN','~',1000000,'*','event_id',ARGV[3],'decision',ARGV[5])
+ if type(id)=='table' and id.err then redis.call('DEL',done);return redis.error_reply(id.err) end
+end
+redis.call('XACK',input,ARGV[1],ARGV[2])
+redis.call('XDEL',input,ARGV[2])
+if old then return 0 else return 1 end
+"#;
 
-/// The worker runs stream consumption and a small diagnostic HTTP server in one
-/// process. `/score` exists for reproducible offline evaluation against exactly the
-/// same scoring function used by the stream consumer. It is not part of the payment
-/// ingress path and can be network-restricted in production.
+// setting supplies process defaults without leaking configuration secrets.
+fn setting(name: &str, default: &str) -> String {
+    env::var(name).unwrap_or_else(|_| default.into())
+}
+// positive rejects unbounded or disabled work limits at startup.
+fn positive(name: &str, default: u64) -> Result<u64, Box<dyn std::error::Error>> {
+    let v = setting(name, &default.to_string()).parse::<u64>()?;
+    if v == 0 {
+        return Err(format!("{name} must be positive").into());
+    };
+    Ok(v)
+}
+
 #[tokio::main]
+// main owns process lifetime; scoring and consumption share one immutable model.
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
-    let redis_addr = env::var("PULSEGATE_REDIS_ADDR").unwrap_or_else(|_| "redis:6379".into());
-    let stream = env::var("PULSEGATE_STREAM").unwrap_or_else(|_| "payment_events".into());
-    let result_stream = env::var("PULSEGATE_RESULT_STREAM").unwrap_or_else(|_| "risk_decisions".into());
-    let group = env::var("PULSEGATE_WORKER_GROUP").unwrap_or_else(|_| "risk-workers".into());
-    let consumer = env::var("PULSEGATE_WORKER_CONSUMER").unwrap_or_else(|_| format!("worker-{}", std::process::id()));
-    let http_addr = env::var("PULSEGATE_WORKER_HTTP_ADDR").unwrap_or_else(|_| "0.0.0.0:8081".into());
-
-    let client = redis::Client::open(format!("redis://{redis_addr}/"))?;
-    let connection = client.get_multiplexed_async_connection().await?;
-    let state = AppState { redis: Arc::new(Mutex::new(connection)), result_stream };
-    ensure_group(state.redis.clone(), &stream, &group).await;
-
-    let consume_state = state.clone();
-    let consume_stream = stream.clone();
-    tokio::spawn(async move { consume_loop(consume_state, consume_stream, group, consumer).await; });
-
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+    let args: Vec<String> = env::args().collect();
+    if args
+        .get(1)
+        .is_some_and(|s| s == "--benchmark" || s == "--predict-jsonl")
+    {
+        return offline(&args);
+    }
+    model::parameters();
+    let config = Arc::new(Config {
+        stream: setting("PULSEGATE_STREAM", "payment_events"),
+        result: setting("PULSEGATE_RESULT_STREAM", "risk_decisions"),
+        group: setting("PULSEGATE_WORKER_GROUP", "risk-workers"),
+        consumer: setting(
+            "PULSEGATE_WORKER_CONSUMER",
+            &format!("{}-{}", setting("HOSTNAME", "worker"), std::process::id()),
+        ),
+        ttl: positive("PULSEGATE_IDEMPOTENCY_TTL_SECONDS", 86400)?,
+        reclaim_ms: positive("PULSEGATE_RECLAIM_IDLE_MS", 5000)?,
+        batch: positive("PULSEGATE_WORKER_BATCH", 256)?.min(1024) as usize,
+    });
+    if config.stream == config.result {
+        return Err("input and result streams must differ".into());
+    }
+    let client = redis::Client::open(format!(
+        "redis://{}/",
+        setting("PULSEGATE_REDIS_ADDR", "redis:6379")
+    ))?;
+    let writer = ConnectionManager::new(client.clone()).await?;
+    let reader = ConnectionManager::new(client).await?;
+    let state = AppState {
+        redis: writer,
+        config,
+        stats: Arc::new(Stats::default()),
+    };
+    ensure_group(&state).await?;
+    let (stop_tx, stop_rx) = watch::channel(false);
+    let task = tokio::spawn(consume(state.clone(), reader, stop_rx));
     let app = Router::new()
-        .route("/healthz", get(|| async { Json(Health{status:"ok"}) }))
+        .route("/healthz", get(|| async { "ok" }))
+        .route("/readyz", get(ready))
+        .route("/metrics", get(metrics))
         .route("/score", post(score_endpoint))
+        .layer(DefaultBodyLimit::max(65536))
         .with_state(state);
-    let listener = tokio::net::TcpListener::bind(&http_addr).await?;
-    info!(%http_addr, "risk worker diagnostic server listening");
-    axum::serve(listener, app).await?;
+    let addr = setting("PULSEGATE_WORKER_HTTP_ADDR", "0.0.0.0:8081");
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    info!(%addr,"worker listening");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            let _ = stop_tx.send(true);
+        })
+        .await?;
+    let _ = tokio::time::timeout(Duration::from_secs(5), task).await;
     Ok(())
 }
-
-async fn score_endpoint(State(_state): State<AppState>, Json(event): Json<PaymentEvent>) -> Result<Json<RiskDecision>, StatusCode> {
-    if event.event_id.is_empty() || event.amount_cents < 0 || !(0..=23).contains(&event.hour_utc) { return Err(StatusCode::BAD_REQUEST); }
-    Ok(Json(model::score(&event)))
-}
-
-/// ensure_group is idempotent so worker replicas may start concurrently. A failed
-/// group-creation attempt is tolerated when the group already exists; subsequent reads
-/// are the real readiness signal.
-async fn ensure_group(redis: Arc<Mutex<MultiplexedConnection>>, stream: &str, group: &str) {
-    let mut conn = redis.lock().await;
-    let _: RedisResult<String> = redis::cmd("XGROUP").arg("CREATE").arg(stream).arg(group).arg("0").arg("MKSTREAM").query_async(&mut *conn).await;
-}
-
-/// consume_loop uses Redis consumer groups so each stream entry is assigned to one
-/// worker. XACK occurs only after the decision has been persisted to the result stream.
-/// A production version would add pending-entry reclamation and a durable decision
-/// store before claiming exactly-once business effects.
-async fn consume_loop(state: AppState, stream: String, group: String, consumer: String) {
-    loop {
-        let reply = {
-            let mut conn = state.redis.lock().await;
-            redis::cmd("XREADGROUP")
-                .arg("GROUP").arg(&group).arg(&consumer)
-                .arg("COUNT").arg(64)
-                .arg("BLOCK").arg(1000)
-                .arg("STREAMS").arg(&stream).arg(">")
-                .query_async::<StreamReadReply>(&mut *conn).await
-        };
-        match reply {
-            Ok(reply) => {
-                for key in reply.keys {
-                    for id in key.ids {
-                        if let Err(err) = process_one(&state, &stream, &group, &id.id, id.map).await { error!(%err, stream_id=%id.id, "event processing failed"); }
-                    }
-                }
-            }
-            Err(err) => { error!(%err, "stream read failed"); tokio::time::sleep(Duration::from_millis(250)).await; }
-        }
+// shutdown_signal handles orchestrator SIGTERM as well as an interactive stop.
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("SIGTERM");
+        tokio::select! {_=tokio::signal::ctrl_c()=>{},_=term.recv()=>{}}
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
     }
 }
+// ready requires both a successful consumer cycle and a reachable Redis dependency.
+async fn ready(State(s): State<AppState>) -> StatusCode {
+    let mut c = s.redis.clone();
+    let ping = tokio::time::timeout(
+        Duration::from_millis(300),
+        redis::cmd("PING").query_async::<String>(&mut c),
+    )
+    .await;
+    if s.stats.ready.load(Ordering::Relaxed) && matches!(ping, Ok(Ok(_))) {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    }
+}
+// score_endpoint uses the production scoring path without publishing a decision.
+async fn score_endpoint(Json(event): Json<PaymentEvent>) -> Result<Json<RiskDecision>, StatusCode> {
+    if !event.valid() {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    Ok(Json(model::score(&event)))
+}
+// metrics exports bounded counters and omits queue values when Redis cannot answer.
+async fn metrics(State(s): State<AppState>) -> ([(header::HeaderName, &'static str); 1], String) {
+    let mut c = s.redis.clone();
+    let queued = tokio::time::timeout(
+        Duration::from_millis(300),
+        c.xlen::<_, u64>(&s.config.stream),
+    )
+    .await;
+    let mut body=format!("# TYPE pulsegate_worker_decisions_total counter\npulsegate_worker_decisions_total {}\n# TYPE pulsegate_worker_duplicates_total counter\npulsegate_worker_duplicates_total {}\n# TYPE pulsegate_worker_errors_total counter\npulsegate_worker_errors_total {}\n# TYPE pulsegate_worker_reclaimed_total counter\npulsegate_worker_reclaimed_total {}\n# TYPE pulsegate_worker_dead_letters_total counter\npulsegate_worker_dead_letters_total {}\n# TYPE pulsegate_worker_ready gauge\npulsegate_worker_ready {}\n",s.stats.decisions.load(Ordering::Relaxed),s.stats.duplicates.load(Ordering::Relaxed),s.stats.errors.load(Ordering::Relaxed),s.stats.reclaimed.load(Ordering::Relaxed),s.stats.dead.load(Ordering::Relaxed),u8::from(s.stats.ready.load(Ordering::Relaxed)));
+    if let Ok(Ok(n)) = queued {
+        body +=
+            &format!("# TYPE pulsegate_queue_outstanding gauge\npulsegate_queue_outstanding {n}\n")
+    }
+    ([(header::CONTENT_TYPE, "text/plain; version=0.0.4")], body)
+}
+// ensure_group tolerates only an existing group; other startup failures stay visible.
+async fn ensure_group(s: &AppState) -> redis::RedisResult<()> {
+    tokio::time::timeout(Duration::from_secs(2), ensure_group_inner(s))
+        .await
+        .map_err(|_| {
+            redis::RedisError::from((redis::ErrorKind::IoError, "group creation timed out"))
+        })?
+}
 
-async fn process_one(state: &AppState, stream: &str, group: &str, stream_id: &str, fields: HashMap<String, redis::Value>) -> Result<(), Box<dyn std::error::Error>> {
-    let payload: String = redis::from_redis_value(fields.get("payload").ok_or("missing payload")?)?;
-    let event: PaymentEvent = serde_json::from_str(&payload)?;
-    let decision = model::score(&event);
-    let encoded = serde_json::to_string(&decision)?;
-    let mut conn = state.redis.lock().await;
-    let _: String = conn.xadd(&state.result_stream, "*", &[ ("event_id", decision.event_id.as_str()), ("decision", encoded.as_str()) ]).await?;
-    let _: i64 = conn.xack(stream, group, &[stream_id]).await?;
+// ensure_group_inner keeps BUSYGROUP handling inside the dependency deadline.
+async fn ensure_group_inner(s: &AppState) -> redis::RedisResult<()> {
+    let mut c = s.redis.clone();
+    let result = redis::cmd("XGROUP")
+        .arg("CREATE")
+        .arg(&s.config.stream)
+        .arg(&s.config.group)
+        .arg("0")
+        .arg("MKSTREAM")
+        .query_async::<String>(&mut c)
+        .await;
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) if e.code() == Some("BUSYGROUP") => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+// consume bounds batch memory and reclaims abandoned deliveries before reading new work.
+async fn consume(s: AppState, mut reader: ConnectionManager, stop: watch::Receiver<bool>) {
+    let mut cursor = "0-0".to_string();
+    let mut last_claim = Instant::now() - Duration::from_secs(2);
+    while !*stop.borrow() {
+        let cycle = async {
+            if last_claim.elapsed() >= Duration::from_secs(1) {
+                let reclaimed = redis::cmd("XAUTOCLAIM")
+                    .arg(&s.config.stream)
+                    .arg(&s.config.group)
+                    .arg(&s.config.consumer)
+                    .arg(s.config.reclaim_ms)
+                    .arg(&cursor)
+                    .arg("COUNT")
+                    .arg(s.config.batch)
+                    .query_async::<StreamAutoClaimReply>(&mut reader)
+                    .await?;
+                cursor = reclaimed.next_stream_id;
+                s.stats
+                    .reclaimed
+                    .fetch_add(reclaimed.claimed.len() as u64, Ordering::Relaxed);
+                process_batch(&s, reclaimed.claimed).await?;
+                last_claim = Instant::now();
+            }
+            let batch = redis::cmd("XREADGROUP")
+                .arg("GROUP")
+                .arg(&s.config.group)
+                .arg(&s.config.consumer)
+                .arg("COUNT")
+                .arg(s.config.batch)
+                .arg("BLOCK")
+                .arg(500)
+                .arg("STREAMS")
+                .arg(&s.config.stream)
+                .arg(">")
+                .query_async::<StreamReadReply>(&mut reader)
+                .await?;
+            for key in batch.keys {
+                process_batch(&s, key.ids).await?
+            }
+            Ok::<(), redis::RedisError>(())
+        };
+        match tokio::time::timeout(Duration::from_secs(4), cycle).await {
+            Ok(Ok(())) => {
+                s.stats.ready.store(true, Ordering::Relaxed);
+            }
+            other => {
+                s.stats.ready.store(false, Ordering::Relaxed);
+                s.stats.errors.fetch_add(1, Ordering::Relaxed);
+                error!(error=?other,"consumer cycle failed");
+                let _ = ensure_group(&s).await;
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        }
+    }
+    s.stats.ready.store(false, Ordering::Relaxed);
+}
+// process_batch pipelines isolated transitions; partial failures leave unacknowledged work retryable.
+async fn process_batch(s: &AppState, entries: Vec<StreamId>) -> redis::RedisResult<()> {
+    if entries.is_empty() {
+        return Ok(());
+    };
+    let mut pipe = redis::pipe();
+    let mut dead = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let payload = entry.get::<String>("payload");
+        let event = payload
+            .as_deref()
+            .and_then(|p| serde_json::from_str::<PaymentEvent>(p).ok())
+            .filter(PaymentEvent::valid);
+        let (id, encoded, output, key, is_dead) = match event {
+            Some(event) => {
+                let decision = model::score(&event);
+                let id = event.event_id;
+                let key = format!("{}:completed:{}", s.config.stream, id);
+                (
+                    id,
+                    serde_json::to_string(&decision).expect("finite score"),
+                    s.config.result.clone(),
+                    key,
+                    false,
+                )
+            }
+            None => {
+                let id = entry
+                    .get::<String>("event_id")
+                    .unwrap_or_else(|| entry.id.clone());
+                let encoded=serde_json::json!({"stream_id":entry.id,"event_id":id,"error":"invalid event schema"}).to_string();
+                let key = format!("{}:rejected:{}", s.config.stream, entry.id);
+                (id, encoded, format!("{}:dead", s.config.result), key, true)
+            }
+        };
+        pipe.cmd("EVAL")
+            .arg(FINISH)
+            .arg(3)
+            .arg(&s.config.stream)
+            .arg(output)
+            .arg(key)
+            .arg(&s.config.group)
+            .arg(&entry.id)
+            .arg(id)
+            .arg(s.config.ttl)
+            .arg(encoded);
+        dead.push(is_dead);
+    }
+    let mut c = s.redis.clone();
+    let results: Vec<i64> = pipe.query_async(&mut c).await?;
+    for (result, is_dead) in results.into_iter().zip(dead) {
+        if result == 0 {
+            s.stats.duplicates.fetch_add(1, Ordering::Relaxed);
+        } else if is_dead {
+            s.stats.dead.fetch_add(1, Ordering::Relaxed);
+        } else {
+            s.stats.decisions.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    Ok(())
+}
+// offline exercises the serving function directly, separating arithmetic latency from HTTP.
+fn offline(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let path = args.get(2).ok_or("dataset path required")?;
+    let text = std::fs::read_to_string(path)?;
+    let mut events = Vec::new();
+    for line in text.lines() {
+        let mut value: serde_json::Value = serde_json::from_str(line)?;
+        value
+            .as_object_mut()
+            .ok_or("object required")?
+            .remove("label");
+        let event: PaymentEvent = serde_json::from_value(value)?;
+        if !event.valid() {
+            return Err("invalid dataset event".into());
+        };
+        events.push(event)
+    }
+    if events.is_empty() {
+        return Err("empty dataset".into());
+    }
+    if args[1] == "--predict-jsonl" {
+        for e in &events {
+            println!("{}", serde_json::to_string(&model::score(e))?)
+        }
+        return Ok(());
+    }
+    let count = args
+        .get(3)
+        .map(|s| s.parse::<usize>())
+        .transpose()?
+        .unwrap_or(1000000);
+    if count == 0 {
+        return Err("count must be positive".into());
+    }
+    for e in &events {
+        std::hint::black_box(model::score(e));
+    }
+    let mut times = Vec::with_capacity(count);
+    let start = Instant::now();
+    for i in 0..count {
+        let now = Instant::now();
+        std::hint::black_box(model::score(std::hint::black_box(
+            &events[i % events.len()],
+        )));
+        times.push(now.elapsed().as_nanos() as u64)
+    }
+    let elapsed = start.elapsed().as_secs_f64();
+    times.sort_unstable();
+    println!(
+        "{}",
+        serde_json::json!({"samples":count,"elapsed_seconds":elapsed,"scores_per_second":count as f64/elapsed,"p50_ns":times[count/2],"p99_ns":times[(count*99/100).min(count-1)],"max_ns":times[count-1],"model_version":model::parameters().model_version,"scope":"in-process score including decision allocation; excludes JSON and network"})
+    );
     Ok(())
 }

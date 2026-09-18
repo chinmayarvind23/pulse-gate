@@ -1,8 +1,9 @@
-FROM rust:1.82-slim AS build
+FROM mirror.gcr.io/library/rust:1.90-slim-bookworm AS build
 WORKDIR /src
-COPY apps/risk-worker/Cargo.toml ./Cargo.toml
+COPY apps/risk-worker/Cargo.toml apps/risk-worker/Cargo.lock ./
 COPY apps/risk-worker/src ./src
-RUN cargo build --release
+COPY apps/risk-worker/model ./model
+RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
 RUN useradd --system --uid 10001 pulsegate

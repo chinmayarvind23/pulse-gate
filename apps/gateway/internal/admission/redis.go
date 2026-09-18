@@ -2,67 +2,82 @@ package admission
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
-	"strconv"
-	"time"
-
 	"github.com/redis/go-redis/v9"
+	"time"
 )
+
+var ErrConflict = errors.New("event_id already used with a different payload")
+var ErrFull = errors.New("admission queue is full")
 
 type Result struct {
 	Accepted  bool
 	Duplicate bool
 	StreamID  string
 }
-
 type RedisAdmitter struct {
-	client *redis.Client
-	stream string
-	ttl    time.Duration
+	client   *redis.Client
+	stream   string
+	ttl      time.Duration
+	MaxQueue int64
+	script   *redis.Script
 }
 
-// The Lua script makes duplicate detection and stream insertion one atomic Redis
-// operation. A separate SETNX followed by XADD creates a crash window where an event
-// could be marked seen without being queued. One server-side script also removes an
-// extra network round trip from the request path.
+// Scripts isolate clients but do not roll back command errors. Remove the marker
+// if append fails, so a retry can still admit the event.
 const admitScript = `
-local key = KEYS[1]
-local stream = KEYS[2]
-local ttl = tonumber(ARGV[1])
-local payload = ARGV[2]
-local event_id = ARGV[3]
-if redis.call('EXISTS', key) == 1 then
-  return {0, ''}
+local prior = redis.call('GET', KEYS[1])
+if prior then
+ if prior ~= ARGV[4] then return {-1,''} end
+ return {0,''}
 end
-redis.call('SET', key, '1', 'EX', ttl)
-local id = redis.call('XADD', stream, '*', 'event_id', event_id, 'payload', payload)
-return {1, id}
+if redis.call('XLEN',KEYS[2]) >= tonumber(ARGV[5]) then return {-2,''} end
+redis.call('SET',KEYS[1],ARGV[4],'EX',ARGV[1])
+local added = redis.pcall('XADD',KEYS[2],'*','event_id',ARGV[3],'payload',ARGV[2])
+if type(added)=='table' and added.err then
+ redis.call('DEL',KEYS[1])
+ return redis.error_reply(added.err)
+end
+return {1,added}
 `
 
+// New scopes replay state to the input stream and caches the Lua script hash.
 func New(client *redis.Client, stream string, ttl time.Duration) *RedisAdmitter {
-	return &RedisAdmitter{client: client, stream: stream, ttl: ttl}
+	return &RedisAdmitter{client: client, stream: stream, ttl: ttl, MaxQueue: 1000000, script: redis.NewScript(admitScript)}
 }
 
-// Admit returns Duplicate without re-enqueuing a previously accepted event. Shared
-// Redis state makes this property hold across gateway restarts and replicas. The TTL
-// bounds memory use; production retention must match the payment provider's maximum
-// replay window and business reconciliation requirements.
+// Admit binds an event identifier to canonical payload bytes for the retention window.
 func (a *RedisAdmitter) Admit(ctx context.Context, eventID string, payload []byte) (Result, error) {
-	key := "pulsegate:idempotency:" + eventID
-	raw, err := a.client.Eval(ctx, admitScript, []string{key, a.stream}, int(a.ttl.Seconds()), string(payload), eventID).Result()
+	digest := sha256.Sum256(payload)
+	key := a.stream + ":idempotency:" + eventID
+	raw, err := a.script.Run(ctx, a.client, []string{key, a.stream}, int64(a.ttl.Seconds()), payload, eventID, hex.EncodeToString(digest[:]), a.MaxQueue).Slice()
 	if err != nil {
 		return Result{}, fmt.Errorf("redis admit: %w", err)
 	}
-	values, ok := raw.([]interface{})
-	if !ok || len(values) != 2 {
-		return Result{}, fmt.Errorf("unexpected redis script response")
+	if len(raw) != 2 {
+		return Result{}, fmt.Errorf("unexpected Redis response")
 	}
-	accepted, err := strconv.Atoi(fmt.Sprint(values[0]))
-	if err != nil {
-		return Result{}, fmt.Errorf("parse admit response: %w", err)
+	code, ok := raw[0].(int64)
+	if !ok {
+		return Result{}, fmt.Errorf("unexpected Redis result type")
 	}
-	if accepted == 0 {
+	switch code {
+	case -1:
+		return Result{}, ErrConflict
+	case -2:
+		return Result{}, ErrFull
+	case 0:
 		return Result{Duplicate: true}, nil
+	case 1:
+		id, ok := raw[1].(string)
+		if !ok {
+			return Result{}, fmt.Errorf("unexpected stream id")
+		}
+		return Result{Accepted: true, StreamID: id}, nil
+	default:
+		return Result{}, fmt.Errorf("unexpected Redis result code")
 	}
-	return Result{Accepted: true, StreamID: fmt.Sprint(values[1])}, nil
 }
