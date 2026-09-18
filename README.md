@@ -1,80 +1,72 @@
 # PulseGate
 
-PulseGate is a high-throughput payment-event reliability and risk gateway for fintech systems that receive webhook traffic from payment providers. It validates signed events, prevents duplicate side effects, admits work quickly, processes events asynchronously, and exposes reproducible systems and ML evaluation evidence.
+PulseGate accepts signed payment webhooks, suppresses repeated deliveries, and processes transaction risk asynchronously. It gives payment integrations a clear acknowledgement boundary: an accepted event is queued before the provider receives a response.
 
-The repository is designed around one production problem: payment providers retry events, downstream services fail, traffic arrives in bursts, and a slow risk service must not turn webhook acknowledgement into a reliability problem.
-
-## Why this problem
-
-Webhook reliability is a real payments concern. Payment providers can retry delivery when acknowledgements fail. Slow synchronous business logic creates avoidable retries and duplicate pressure. PulseGate therefore keeps the ingress path small and moves risk scoring to asynchronous workers.
-
-## User, input, output
-
-**User:** a fintech platform team integrating payment-provider webhooks.
-
-**Input:** signed JSON payment events containing an event identifier, amount, currency, merchant and transaction-risk features.
-
-**Output:** a fast admission response plus an asynchronously produced risk decision with audit fields, telemetry and deterministic replay behavior.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    P[Payment provider or load generator] --> G[Go ingress]
-    G -->|HMAC + schema + atomic dedup/enqueue| R[(Redis)]
-    R -->|Stream consumer group| W[Rust risk workers]
-    W --> O[Decision log / result stream]
-    G --> M[Prometheus metrics]
-    W --> M
-    K[Kubernetes] --> G
-    K --> W
-```
-
-The Go service owns the latency-sensitive request contract. Redis provides shared idempotency state and a durable-enough demo stream so the ingress service can remain stateless. Rust workers own deterministic feature validation and scoring. Kubernetes demonstrates independent service scaling and recovery. Python is used only for data generation, evaluation orchestration and load testing.
-
-## Why each technology exists
-
-- **Go:** high-concurrency HTTP ingress, explicit timeouts, low-overhead request handling and a small operational surface.
-- **Rust:** typed, independently scalable scoring worker with predictable native execution for the compute path.
-- **Redis Streams:** one compact shared dependency for atomic idempotency and asynchronous event delivery in the portfolio version.
-- **Python:** reproducible evaluation, dataset generation, load tests and benchmark artifact processing.
-- **Docker:** reproducible builds for different Go and Rust runtimes.
-- **Kubernetes:** independent scaling, health checks, restart behavior and resource limits for the ingress and worker deployments.
-- **Prometheus:** metrics that make latency, duplicates, queue pressure, scoring behavior and failures inspectable.
+Providers retry after timeouts and lost responses. Keeping risk processing outside the request path lets the gateway continue admitting work during a worker restart. Shared replay state prevents gateway replicas from admitting the same event twice.
 
 ## Run locally
 
-Requirements: Docker with Compose and Python 3.11+.
+Install Docker with Compose. Copy `.env.example` to `.env`, replace its placeholder secrets, then run:
 
-```bash
-cp .env.example .env
-docker compose up --build
-python -m venv .venv
-. .venv/bin/activate
-pip install -e '.[dev]'
-python scripts/smoke_test.py
-python evals/risk_eval.py --worker-url http://localhost:8081
-python scripts/load_test.py --url http://localhost:8080/v1/events --rps 1000 --seconds 10
+```sh
+docker compose up --build -d
 ```
 
-See [commands](docs/commands.md) for the complete verification sequence.
+Open [PulseGate](http://localhost:8080). Enter the signing secret from `.env`, send a sample transaction, then replay it. The operator page shows acknowledgements, duplicate suppression, recent decisions and outstanding work.
 
-## Repository map
+[Grafana](http://localhost:3000/d/pulsegate-operations/pulsegate-operations) provides the operations dashboard. [Prometheus](http://localhost:9090) collects service telemetry. Host ports bind to loopback.
 
-```text
-apps/gateway/             Go ingress service
-apps/risk-worker/         Rust stream consumer and scoring service
-evals/                    evaluation datasets, runner and result schema
-scripts/                  synthetic data, smoke, load and failure tools
-infra/k8s/                Kubernetes manifests
-infra/prometheus/         local scrape configuration
-docs/                     PRD, design, ADRs, reliability, security, metrics
+Use `docker compose down` to stop the services while preserving Redis data.
+
+## Features
+
+- HMAC verification over the original request bytes and a shared, validated event schema.
+- Atomic replay detection and enqueueing, with conflicts for changed payloads.
+- Bounded worker batches, abandoned-message recovery and idempotent decision publication.
+- A versioned, calibrated classifier with matching Python and Rust feature transforms.
+- An operator page, provisioned dashboard, health checks and persistent local storage.
+- Kubernetes deployments with readiness probes, resource limits and autoscaling policies.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Provider[Signed payment event] --> Gateway[Go gateway]
+    Gateway -->|Validate and atomically admit| Redis[(Redis Streams)]
+    Redis -->|Consumer group| Worker[Rust worker]
+    Worker -->|Publish decision and acknowledge| Redis
+    UI[Operator page] -->|Authenticated inspection| Gateway
+    Gateway --> Prometheus
+    Worker --> Prometheus
+    Prometheus --> Grafana
 ```
 
-## Evaluation
+Go owns HTTP admission. Redis holds shared replay state, pending work and decisions. Rust consumes batches and runs the exported classifier. Python and scikit-learn provide the training and validation tools. Docker Compose runs the local stack; Kubernetes provides a separate deployment path.
 
-Systems evaluation records throughput, p50/p95/p99 acknowledgement latency, error rate, duplicate acceptance rate, queue lag and recovery time. ML evaluation records precision, recall, F1, false-positive rate, calibration and inference latency against a deterministic rules baseline.
+The classifier uses synthetic transaction data. Its decisions demonstrate the pipeline and are not a real fraud assessment. Redis persistence and replay retention define the durability boundary; PulseGate does not execute money transfers or act as a financial ledger.
 
 ## Documentation
 
-Start with [docs/README.md](docs/README.md), then read [PRD](docs/PRD.md), [system design](docs/system-design.md), [LLD](docs/LLD.md), and [evaluation](docs/evaluation.md).
+- [API contract](docs/api.md) and [OpenAPI specification](docs/openapi.json)
+- [Local and Kubernetes operations](docs/operations.md)
+- [Security and data handling](docs/security.md)
+- [Local demo recording](../resources/pulse_gate/artifacts/demo/pulsegate.gif)
+
+## Development
+
+Go, Rust and Python are required to run checks outside containers:
+
+```sh
+go test ./apps/gateway/...
+cd apps/risk-worker && cargo test --locked
+```
+
+From the repository root:
+
+```sh
+python -m pip install -e '.[dev]'
+python -m pytest -q -p no:cacheprovider
+ruff check scripts evals tests
+```
+
+Set `PULSEGATE_TEST_REDIS_ADDR` to enable the Redis integration tests. The source tree contains the application, deployment configuration, client tools and tests.

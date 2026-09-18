@@ -4,7 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
-	"github.com/yourname/pulsegate/apps/gateway/internal/signature"
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/signature"
 	"net/http"
 	"time"
 )

@@ -1,5 +1,5 @@
-# Evaluation
+# Model tools
 
-Generate the deterministic synthetic dataset with `python scripts/generate_dataset.py`, start the worker, then run `python evals/risk_eval.py`.
+The worker embeds a versioned model artifact under `apps/risk-worker/model/`. `scripts.train_model` builds the same transform and exports a classifier. `evals.risk_eval` checks the running worker against that export. Both commands require an output directory outside this repository.
 
-The evaluator compares the Rust scorer with a simple deterministic baseline and reports precision, recall, F1, false-positive rate and request-level scoring latency. The synthetic label generator is intentionally separate from the Rust model weights. These numbers demonstrate the evaluation mechanism and serving discipline, not real fraud-detection performance.
+The checked-in JSONL file is a fixed synthetic input dataset. The tools reject output paths inside the source tree.

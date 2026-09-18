@@ -9,14 +9,14 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/admission"
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/config"
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/model"
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/signature"
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
-	"github.com/yourname/pulsegate/apps/gateway/internal/admission"
-	"github.com/yourname/pulsegate/apps/gateway/internal/config"
-	"github.com/yourname/pulsegate/apps/gateway/internal/model"
-	"github.com/yourname/pulsegate/apps/gateway/internal/signature"
-	"github.com/yourname/pulsegate/apps/gateway/internal/telemetry"
 )
 
 type App struct {

@@ -1,4 +1,4 @@
-module github.com/yourname/pulsegate
+module github.com/chinmayarvind23/pulse_gate
 
 go 1.23
 

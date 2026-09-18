@@ -4,7 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/yourname/pulsegate/apps/gateway/internal/config"
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"os"

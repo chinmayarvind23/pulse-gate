@@ -1,0 +1,424 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PulseGate",
+    "version": "0.1.0",
+    "description": "Payment-event admission and asynchronous risk decisions. HMAC covers raw body for POST and UTF-8 path for protected GET."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080"
+    }
+  ],
+  "paths": {
+    "/v1/events": {
+      "post": {
+        "summary": "Authenticate and admit a payment event",
+        "security": [
+          {
+            "HMAC": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Admitted or already known",
+            "headers": {
+              "X-PulseGate-Duplicate": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true"
+                  ]
+                },
+                "description": "Present on duplicate admission"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON or event schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid HMAC signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Retained event identifier has different content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds the body limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Shared state unavailable or outstanding queue full",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "summary": "Inspect outstanding work; sign URL path",
+        "security": [
+          {
+            "HMAC": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queue state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outstanding": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9223372036854775807
+                    },
+                    "admission": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid HMAC signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Shared state unavailable or outstanding queue full",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/decisions": {
+      "get": {
+        "summary": "Inspect recent decisions; sign URL path",
+        "security": [
+          {
+            "HMAC": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent decisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "$ref": "#/components/schemas/Decision"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid HMAC signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Shared state unavailable or outstanding queue full",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/score": {
+      "post": {
+        "servers": [
+          {
+            "url": "http://localhost:8081"
+          }
+        ],
+        "summary": "Score one event without stream side effects; internal worker endpoint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Risk decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON or event schema"
+          },
+          "422": {
+            "description": "Invalid schema"
+          },
+          "413": {
+            "description": "Request exceeds the body limit"
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "Process liveness",
+        "responses": {
+          "200": {
+            "description": "Available"
+          },
+          "503": {
+            "description": "Shared state unavailable or outstanding queue full"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Dependency-aware readiness",
+        "responses": {
+          "200": {
+            "description": "Available"
+          },
+          "503": {
+            "description": "Shared state unavailable or outstanding queue full"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus exposition",
+        "responses": {
+          "200": {
+            "description": "Available"
+          },
+          "503": {
+            "description": "Shared state unavailable or outstanding queue full"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "HMAC": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-PulseGate-Signature",
+        "description": "Hex HMAC-SHA256, with shared secret"
+      }
+    },
+    "schemas": {
+      "Event": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "amount_cents",
+          "currency",
+          "merchant_category",
+          "country",
+          "card_present",
+          "hour_utc",
+          "velocity_5m",
+          "velocity_1h",
+          "prior_declines"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9223372036854775807
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "merchant_category": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9999
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "card_present": {
+            "type": "boolean"
+          },
+          "hour_utc": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 23
+          },
+          "velocity_5m": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "velocity_1h": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "prior_declines": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      },
+      "Decision": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "score",
+          "risky",
+          "model_version"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "risky": {
+            "type": "boolean"
+          },
+          "model_version": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yourname/pulsegate/apps/gateway/internal/config"
-	"github.com/yourname/pulsegate/apps/gateway/internal/server"
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/config"
+	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/server"
 )
 
 // main wires configuration, transport and shutdown only. Business behavior stays in

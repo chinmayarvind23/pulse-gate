@@ -21,9 +21,15 @@ func clientForTest(t *testing.T) (*redis.Client, string) {
 	t.Cleanup(func() { c.Close() })
 	stream := "test:" + t.Name() + ":" + time.Now().Format("150405.000000000")
 	t.Cleanup(func() {
-		keys, _ := c.Keys(context.Background(), stream+"*").Result()
-		if len(keys) > 0 {
-			c.Del(context.Background(), keys...)
+		// Incremental cleanup avoids pausing unrelated traffic in a shared test Redis.
+		keys := c.Scan(context.Background(), 0, stream+"*", 100).Iterator()
+		for keys.Next(context.Background()) {
+			if err := c.Del(context.Background(), keys.Val()).Err(); err != nil {
+				t.Error(err)
+			}
+		}
+		if err := keys.Err(); err != nil {
+			t.Error(err)
 		}
 	})
 	return c, stream

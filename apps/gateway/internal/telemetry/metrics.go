@@ -9,7 +9,7 @@ type Metrics struct {
 	AdmissionErrors prometheus.Counter
 }
 
-// NewMetrics keeps the metric vocabulary small enough to explain in an interview.
+// NewMetrics uses bounded labels so telemetry memory does not grow with event identifiers.
 // Histograms are used for latency because averages hide the tail behavior that drives
 // webhook timeout and retry risk.
 func NewMetrics(reg prometheus.Registerer) *Metrics {
