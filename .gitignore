@@ -5,7 +5,4 @@ __pycache__/
 target/
 bin/
 coverage.out
-artifacts/benchmarks/*.json
-artifacts/benchmarks/*.csv
-!artifacts/benchmarks/.gitkeep
 .DS_Store
