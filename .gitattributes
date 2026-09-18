@@ -1,0 +1,2 @@
+# Keep the embedded browser page consistent across Windows and Linux.
+apps/gateway/internal/server/web/index.html text eol=lf
