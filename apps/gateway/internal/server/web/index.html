@@ -15,6 +15,21 @@ function validateSample(){
  if(!valid){$('message').textContent='Enter a whole-number amount from 0 to 900,000 cents.';input.focus();input.reportValidity()}
  return valid;
 }
+// clearAmountError removes obsolete validation feedback once the amount is usable again.
+function clearAmountError(){
+ const input=$('amount');
+ if(input.getAttribute('aria-invalid')==='true'&&input.value!==''&&Number.isSafeInteger(Number(input.value))&&input.checkValidity()){
+  input.setAttribute('aria-invalid','false');
+  if($('message').textContent==='Enter a whole-number amount from 0 to 900,000 cents.'){
+   $('message').textContent='Amount corrected. Ready to send.';$('message').classList.remove('error');
+  }
+ }
+}
+// applyProfile keeps preset amounts and their validation state consistent.
+function applyProfile(){
+ $('amount').value=$('profile').value==='risk'?850000:2500;
+ clearAmountError();
+}
 // submitWithEnter lets keyboard users send from the amount field without duplicate key-repeat requests.
 function submitWithEnter(event){
  if(event.key==='Enter'&&!event.repeat&&!event.isComposing){event.preventDefault();send()}
@@ -127,6 +142,6 @@ async function refresh(){
   $('refresh-note').textContent=reason+(lastRefresh?' Last updated '+lastRefresh+'; displayed values may be out of date.':' No current data available.');
  }finally{refreshing=false;$('refresh').disabled=false;$('refresh').textContent='Refresh'}
 }
-$('amount').onkeydown=submitWithEnter;
-$('send').onclick=()=>send();$('replay').onclick=()=>send(true);$('bad').onclick=()=>send(false,true);$('refresh').onclick=refresh;$('secret').oninput=resetConnection;$('secret').onchange=refresh;$('profile').onchange=()=>{$('amount').value=$('profile').value==='risk'?850000:2500};setInterval(refresh,2000);
+$('amount').onkeydown=submitWithEnter;$('amount').oninput=clearAmountError;
+$('send').onclick=()=>send();$('replay').onclick=()=>send(true);$('bad').onclick=()=>send(false,true);$('refresh').onclick=refresh;$('secret').oninput=resetConnection;$('secret').onchange=refresh;$('profile').onchange=applyProfile;setInterval(refresh,2000);
 </script></body></html>
