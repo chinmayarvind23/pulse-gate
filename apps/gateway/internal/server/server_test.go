@@ -31,6 +31,9 @@ func TestOperatorBoundary(t *testing.T) {
 		if w.Code != 401 {
 			t.Fatalf("unauthenticated %s: %d", path, w.Code)
 		}
+		if w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("unauthenticated %s response could be cached", path)
+		}
 		mac := hmac.New(sha256.New, []byte(cfg.HMACSecret))
 		mac.Write([]byte(path))
 		req = httptest.NewRequest("GET", path, nil)
@@ -39,6 +42,9 @@ func TestOperatorBoundary(t *testing.T) {
 		app.Handler().ServeHTTP(w, req)
 		if w.Code != 200 {
 			t.Fatalf("authenticated %s: %d", path, w.Code)
+		}
+		if w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("authenticated %s response could be cached", path)
 		}
 	}
 	w := httptest.NewRecorder()
