@@ -7,14 +7,18 @@ spec:
   template:
     metadata: {labels: {app: gateway}}
     spec:
+      terminationGracePeriodSeconds: 15
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
       containers:
         - name: gateway
           image: pulsegate/gateway:local
           imagePullPolicy: IfNotPresent
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           ports: [{containerPort: 8080}]
           env:
             - {name: PULSEGATE_REDIS_ADDR, value: "redis:6379"}
             - {name: PULSEGATE_HMAC_SECRET, valueFrom: {secretKeyRef: {name: pulsegate-secrets, key: hmac-secret}}}
+          startupProbe: {httpGet: {path: /healthz, port: 8080}, periodSeconds: 2, failureThreshold: 30}
           readinessProbe: {httpGet: {path: /readyz, port: 8080}, initialDelaySeconds: 1, periodSeconds: 2}
           livenessProbe: {httpGet: {path: /healthz, port: 8080}, initialDelaySeconds: 3, periodSeconds: 5}
           resources:

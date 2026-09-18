@@ -1,0 +1,277 @@
+{
+  "refresh": "5s",
+  "title": "PulseGate operations",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum(rate(pulsegate_http_requests_total{code=\"202\"}[1m]))",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "uid": "pulsegate-prometheus",
+        "type": "prometheus"
+      },
+      "type": "timeseries",
+      "gridPos": {
+        "y": 0.0,
+        "w": 12,
+        "x": 0,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "title": "Admission rate",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99,sum by(le)(rate(pulsegate_ack_duration_seconds_bucket[1m])))",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "uid": "pulsegate-prometheus",
+        "type": "prometheus"
+      },
+      "type": "timeseries",
+      "gridPos": {
+        "y": 0.0,
+        "w": 12,
+        "x": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "title": "Acknowledgement tail",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "targets": [
+        {
+          "expr": "sum(rate(pulsegate_duplicates_total[1m]))",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "uid": "pulsegate-prometheus",
+        "type": "prometheus"
+      },
+      "type": "timeseries",
+      "gridPos": {
+        "y": 8.0,
+        "w": 12,
+        "x": 0,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "title": "Repeated deliveries",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum(rate(pulsegate_admission_errors_total[1m]))",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "uid": "pulsegate-prometheus",
+        "type": "prometheus"
+      },
+      "type": "timeseries",
+      "gridPos": {
+        "y": 8.0,
+        "w": 12,
+        "x": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "title": "Admission errors",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "targets": [
+        {
+          "expr": "max(pulsegate_queue_outstanding)",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "uid": "pulsegate-prometheus",
+        "type": "prometheus"
+      },
+      "type": "timeseries",
+      "gridPos": {
+        "y": 16.0,
+        "w": 12,
+        "x": 0,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "title": "Outstanding queue",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(rate(pulsegate_worker_decisions_total[1m]))",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "uid": "pulsegate-prometheus",
+        "type": "prometheus"
+      },
+      "type": "timeseries",
+      "gridPos": {
+        "y": 16.0,
+        "w": 12,
+        "x": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "title": "Worker decisions",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "targets": [
+        {
+          "expr": "sum(pulsegate_worker_reclaimed_total)",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "uid": "pulsegate-prometheus",
+        "type": "prometheus"
+      },
+      "type": "timeseries",
+      "gridPos": {
+        "y": 24.0,
+        "w": 12,
+        "x": 0,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "title": "Reclaimed work",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum(pulsegate_worker_dead_letters_total)",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "uid": "pulsegate-prometheus",
+        "type": "prometheus"
+      },
+      "type": "timeseries",
+      "gridPos": {
+        "y": 24.0,
+        "w": 12,
+        "x": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "title": "Rejected stream entries",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    }
+  ],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "uid": "pulsegate-operations",
+  "version": 1
+}

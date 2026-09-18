@@ -3,21 +3,29 @@ on: [push, pull_request]
 jobs:
   go:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 1s --health-retries 20
+    env:
+      PULSEGATE_TEST_REDIS_ADDR: 127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: {go-version: '1.23'}
-      - run: go test ./apps/gateway/...
+      - run: go test -race ./apps/gateway/...
+      - run: go vet ./apps/gateway/...
   rust:
     runs-on: ubuntu-latest
     defaults: {run: {working-directory: apps/risk-worker}}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with: {components: clippy,rustfmt}
+        with: {toolchain: '1.90.0', components: 'clippy,rustfmt'}
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
   python:
     runs-on: ubuntu-latest
     steps:
@@ -26,4 +34,4 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install -e '.[dev]'
       - run: ruff check scripts evals tests
-      - run: pytest -q
+      - run: python -m pytest -q -p no:cacheprovider

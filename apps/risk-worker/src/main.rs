@@ -6,7 +6,7 @@ use axum::{
 };
 use pulsegate_risk_worker::model::{self, PaymentEvent, RiskDecision};
 use redis::{
-    aio::ConnectionManager,
+    aio::{ConnectionManager, ConnectionManagerConfig},
     streams::{StreamAutoClaimReply, StreamId, StreamReadReply},
     AsyncCommands,
 };
@@ -18,12 +18,13 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tokio::sync::watch;
+use tokio::sync::{watch, RwLock};
 use tracing::{error, info};
 
 #[derive(Clone)]
 struct AppState {
-    redis: ConnectionManager,
+    redis: Arc<RwLock<ConnectionManager>>,
+    client: redis::Client,
     config: Arc<Config>,
     stats: Arc<Stats>,
 }
@@ -49,20 +50,24 @@ struct Stats {
 // Publish, mark and acknowledge under Redis isolation. A failed append removes its
 // marker. Redelivery after a lost response observes the marker and cannot republish.
 const FINISH: &str = r#"
+local ok, result = pcall(function()
 local input=KEYS[1]
 local output=KEYS[2]
 local done=KEYS[3]
 local old=redis.call('GET',done)
 if not old then
  local t=redis.call('TYPE',output).ok
- if t~='none' and t~='stream' then return redis.error_reply('output must be stream') end
+ if t~='none' and t~='stream' then error('output must be stream') end
  redis.call('SET',done,'1','EX',ARGV[4])
  local id=redis.pcall('XADD',output,'MAXLEN','~',1000000,'*','event_id',ARGV[3],'decision',ARGV[5])
- if type(id)=='table' and id.err then redis.call('DEL',done);return redis.error_reply(id.err) end
+ if type(id)=='table' and id.err then redis.call('DEL',done);error(id.err) end
 end
 redis.call('XACK',input,ARGV[1],ARGV[2])
 redis.call('XDEL',input,ARGV[2])
 if old then return 0 else return 1 end
+end)
+if not ok then return {-1,tostring(result)} end
+return {result,''}
 "#;
 
 // setting supplies process defaults without leaking configuration secrets.
@@ -111,10 +116,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "redis://{}/",
         setting("PULSEGATE_REDIS_ADDR", "redis:6379")
     ))?;
-    let writer = ConnectionManager::new(client.clone()).await?;
-    let reader = ConnectionManager::new(client).await?;
+    // Socket deadlines let the manager detect dead connections after pod replacement.
+    let redis_config = ConnectionManagerConfig::new()
+        .set_connection_timeout(Duration::from_secs(2))
+        .set_response_timeout(Duration::from_secs(2))
+        .set_number_of_retries(2);
+    let writer = ConnectionManager::new_with_config(client.clone(), redis_config.clone()).await?;
+    let reader = ConnectionManager::new_with_config(client.clone(), redis_config).await?;
     let state = AppState {
-        redis: writer,
+        redis: Arc::new(RwLock::new(writer)),
+        client,
         config,
         stats: Arc::new(Stats::default()),
     };
@@ -155,7 +166,7 @@ async fn shutdown_signal() {
 }
 // ready requires both a successful consumer cycle and a reachable Redis dependency.
 async fn ready(State(s): State<AppState>) -> StatusCode {
-    let mut c = s.redis.clone();
+    let mut c = s.redis.read().await.clone();
     let ping = tokio::time::timeout(
         Duration::from_millis(300),
         redis::cmd("PING").query_async::<String>(&mut c),
@@ -176,7 +187,7 @@ async fn score_endpoint(Json(event): Json<PaymentEvent>) -> Result<Json<RiskDeci
 }
 // metrics exports bounded counters and omits queue values when Redis cannot answer.
 async fn metrics(State(s): State<AppState>) -> ([(header::HeaderName, &'static str); 1], String) {
-    let mut c = s.redis.clone();
+    let mut c = s.redis.read().await.clone();
     let queued = tokio::time::timeout(
         Duration::from_millis(300),
         c.xlen::<_, u64>(&s.config.stream),
@@ -200,7 +211,7 @@ async fn ensure_group(s: &AppState) -> redis::RedisResult<()> {
 
 // ensure_group_inner keeps BUSYGROUP handling inside the dependency deadline.
 async fn ensure_group_inner(s: &AppState) -> redis::RedisResult<()> {
-    let mut c = s.redis.clone();
+    let mut c = s.redis.read().await.clone();
     let result = redis::cmd("XGROUP")
         .arg("CREATE")
         .arg(&s.config.stream)
@@ -265,6 +276,21 @@ async fn consume(s: AppState, mut reader: ConnectionManager, stop: watch::Receiv
                 s.stats.ready.store(false, Ordering::Relaxed);
                 s.stats.errors.fetch_add(1, Ordering::Relaxed);
                 error!(error=?other,"consumer cycle failed");
+                let transport_error = match &other {
+                    Err(_) => true,
+                    Ok(Err(e)) => e.is_io_error(),
+                    _ => false,
+                };
+                if transport_error {
+                    // A Kubernetes service can blackhole an old socket without FIN/RST.
+                    // redis-rs retries response timeouts on that same socket, so replace both.
+                    let replacement =
+                        tokio::time::timeout(Duration::from_secs(5), reconnect(&s)).await;
+                    if let Ok(Ok((new_reader, new_writer))) = replacement {
+                        reader = new_reader;
+                        *s.redis.write().await = new_writer;
+                    }
+                }
                 let _ = ensure_group(&s).await;
                 tokio::time::sleep(Duration::from_millis(250)).await;
             }
@@ -272,6 +298,18 @@ async fn consume(s: AppState, mut reader: ConnectionManager, stop: watch::Receiv
     }
     s.stats.ready.store(false, Ordering::Relaxed);
 }
+// reconnect abandons stale service sockets while keeping readiness on the new writer.
+async fn reconnect(s: &AppState) -> redis::RedisResult<(ConnectionManager, ConnectionManager)> {
+    let config = ConnectionManagerConfig::new()
+        .set_connection_timeout(Duration::from_secs(2))
+        .set_response_timeout(Duration::from_secs(2))
+        .set_number_of_retries(1);
+    tokio::try_join!(
+        ConnectionManager::new_with_config(s.client.clone(), config.clone()),
+        ConnectionManager::new_with_config(s.client.clone(), config)
+    )
+}
+
 // process_batch pipelines isolated transitions; partial failures leave unacknowledged work retryable.
 async fn process_batch(s: &AppState, entries: Vec<StreamId>) -> redis::RedisResult<()> {
     if entries.is_empty() {
@@ -320,9 +358,15 @@ async fn process_batch(s: &AppState, entries: Vec<StreamId>) -> redis::RedisResu
             .arg(encoded);
         dead.push(is_dead);
     }
-    let mut c = s.redis.clone();
-    let results: Vec<i64> = pipe.query_async(&mut c).await?;
-    for (result, is_dead) in results.into_iter().zip(dead) {
+    let mut c = s.redis.read().await.clone();
+    let results: Vec<(i64, String)> = pipe.query_async(&mut c).await?;
+    let mut failed = false;
+    for ((result, error), is_dead) in results.into_iter().zip(dead) {
+        if result < 0 {
+            failed = true;
+            error!(%error, "completion failed; entry remains retryable");
+            continue;
+        }
         if result == 0 {
             s.stats.duplicates.fetch_add(1, Ordering::Relaxed);
         } else if is_dead {
@@ -330,6 +374,12 @@ async fn process_batch(s: &AppState, entries: Vec<StreamId>) -> redis::RedisResu
         } else {
             s.stats.decisions.fetch_add(1, Ordering::Relaxed);
         }
+    }
+    if failed {
+        return Err(redis::RedisError::from((
+            redis::ErrorKind::ResponseError,
+            "one or more completions failed",
+        )));
     }
     Ok(())
 }

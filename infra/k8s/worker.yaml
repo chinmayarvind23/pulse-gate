@@ -7,15 +7,19 @@ spec:
   template:
     metadata: {labels: {app: risk-worker}}
     spec:
+      terminationGracePeriodSeconds: 15
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
       containers:
         - name: risk-worker
           image: pulsegate/risk-worker:local
           imagePullPolicy: IfNotPresent
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           ports: [{containerPort: 8081}]
           env:
             - {name: PULSEGATE_REDIS_ADDR, value: "redis:6379"}
             - {name: PULSEGATE_WORKER_CONSUMER, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
-          readinessProbe: {httpGet: {path: /healthz, port: 8081}, initialDelaySeconds: 1, periodSeconds: 2}
+          startupProbe: {httpGet: {path: /healthz, port: 8081}, periodSeconds: 2, failureThreshold: 30}
+          readinessProbe: {httpGet: {path: /readyz, port: 8081}, initialDelaySeconds: 1, periodSeconds: 2}
           livenessProbe: {httpGet: {path: /healthz, port: 8081}, initialDelaySeconds: 3, periodSeconds: 5}
           resources:
             requests: {cpu: 250m, memory: 64Mi}

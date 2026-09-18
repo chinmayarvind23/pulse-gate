@@ -45,6 +45,9 @@ pub struct RiskDecision {
 }
 #[derive(Deserialize)]
 pub struct Model {
+    pub schema_version: u32,
+    pub feature_version: String,
+    pub feature_names: [String; 7],
     pub model_version: String,
     pub weights: [f64; 7],
     pub intercept: f64,
@@ -56,9 +59,33 @@ static MODEL: OnceLock<Model> = OnceLock::new();
 /// parameters parses the immutable serving artifact once, outside the scoring hot path.
 pub fn parameters() -> &'static Model {
     MODEL.get_or_init(|| {
-        serde_json::from_str(include_str!("../model/model.json")).expect("embedded model")
+        let model: Model =
+            serde_json::from_str(include_str!("../model/model.json")).expect("embedded model");
+        assert_eq!(model.schema_version, 1, "unsupported model schema");
+        assert_eq!(
+            model.feature_version, "payment-risk-v1",
+            "unsupported transform"
+        );
+        assert_eq!(
+            model.feature_names,
+            [
+                "amount_100k",
+                "night",
+                "card_not_present",
+                "non_us",
+                "velocity_5m_10",
+                "velocity_1h_30",
+                "declines_5"
+            ]
+            .map(String::from)
+        );
+        assert!(model.weights.iter().all(|x| x.is_finite()) && model.intercept.is_finite());
+        assert!(model.calibration_slope.is_finite() && model.calibration_intercept.is_finite());
+        assert!((0.0..1.0).contains(&model.threshold));
+        model
     })
 }
+
 /// features preserves the training order and clipping limits exactly.
 pub fn features(e: &PaymentEvent) -> [f64; 7] {
     [

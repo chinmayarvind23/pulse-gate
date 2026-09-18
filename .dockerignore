@@ -1,4 +1,10 @@
 .git
+.env
+.env.*
+!.env.example
 .venv
-__pycache__
-private-resources
+**/__pycache__
+**/target
+.pytest_cache
+.ruff_cache
+*.egg-info

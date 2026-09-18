@@ -1,9 +1,9 @@
-.PHONY: test fmt up down smoke eval
+.PHONY: test fmt up down smoke
 
 test:
 	go test ./apps/gateway/...
-	cd apps/risk-worker && cargo test
-	pytest -q
+	cd apps/risk-worker && cargo test --locked
+	python -m pytest -q -p no:cacheprovider
 
 fmt:
 	gofmt -w apps/gateway
@@ -14,10 +14,7 @@ up:
 	docker compose up --build -d
 
 down:
-	docker compose down -v
+	docker compose down
 
 smoke:
-	python scripts/smoke_test.py
-
-eval:
-	python evals/risk_eval.py
+	python -m scripts.smoke_test
