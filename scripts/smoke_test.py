@@ -4,8 +4,8 @@ import httpx
 
 from scripts.common import encode_event, signed_headers
 
-SECRET = os.getenv("PULSEGATE_HMAC_SECRET", "dev-secret-change-me")
-URL = os.getenv("PULSEGATE_URL", "http://localhost:8080/v1/events")
+SECRET = os.getenv("HOOKGUARD_HMAC_SECRET", "dev-secret-change-me")
+URL = os.getenv("HOOKGUARD_URL", "http://localhost:8080/v1/events")
 
 
 def main() -> int:
@@ -30,14 +30,14 @@ def main() -> int:
         {
             "first": first.status_code,
             "second": second.status_code,
-            "duplicate_header": second.headers.get("X-PulseGate-Duplicate"),
+            "duplicate_header": second.headers.get("X-HookGuard-Duplicate"),
         }
     )
     return (
         0
         if first.status_code == 202
         and second.status_code == 202
-        and second.headers.get("X-PulseGate-Duplicate") == "true"
+        and second.headers.get("X-HookGuard-Duplicate") == "true"
         else 1
     )
 

@@ -607,7 +607,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pulsegate-risk-worker"
+name = "hookguard-risk-worker"
 version = "0.1.0"
 dependencies = [
  "approx",

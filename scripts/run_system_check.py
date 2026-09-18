@@ -23,7 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
     parser.add_argument("--vegeta", type=Path, required=True, help="Linux amd64 Vegeta executable")
-    parser.add_argument("--network", default="pulse_gate_default")
+    parser.add_argument("--network", default="hook-guard_default")
     parser.add_argument("--url", default="http://gateway:8080/v1/events")
     parser.add_argument("--rate", type=int, default=12500)
     parser.add_argument("--seconds", type=int, default=60)
@@ -39,8 +39,8 @@ def main():
         parser.error("unique events must be positive and cannot exceed count")
     out = external_directory(args.output)
     executable = args.vegeta.resolve(strict=True)
-    if not os.environ.get("PULSEGATE_HMAC_SECRET"):
-        parser.error("PULSEGATE_HMAC_SECRET is required")
+    if not os.environ.get("HOOKGUARD_HMAC_SECRET"):
+        parser.error("HOOKGUARD_HMAC_SECRET is required")
     targets = [
         sys.executable,
         "-m",
@@ -57,7 +57,7 @@ def main():
     if args.unique:
         targets += ["--unique", str(args.unique)]
     subprocess.run(targets, check=True)
-    name = "pulsegate-check-" + uuid.uuid4().hex[:10]
+    name = "hookguard-check-" + uuid.uuid4().hex[:10]
     image = "mirror.gcr.io/library/rust:1.90-slim-bookworm"
     attack = [
         "/usr/local/bin/vegeta",
@@ -116,8 +116,8 @@ def main():
         "images": {
             image: docker_json("image", "inspect", image)[0]["Id"]
             for image in [
-                "pulsegate/gateway:local",
-                "pulsegate/risk-worker:local",
+                "hookguard/gateway:local",
+                "hookguard/risk-worker:local",
                 "redis:7.4-alpine",
             ]
         },
@@ -131,7 +131,7 @@ def main():
             if args.restart_worker and manifest["restart"] is None and elapsed >= 30:
                 before = time.monotonic()
                 restart = subprocess.run(
-                    ["docker", "restart", "pulse_gate-risk-worker-1"],
+                    ["docker", "restart", "hook-guard-risk-worker-1"],
                     capture_output=True,
                     text=True,
                     check=False,

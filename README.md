@@ -1,12 +1,12 @@
-# PulseGate
+# Hook Guard
 
-PulseGate receives payment notifications, remembers which ones it has already accepted, and processes them in the background. It helps an integration handle repeated messages and recover work after a processing worker stops.
+Hook Guard receives payment notifications, remembers which ones it has already accepted, and processes them in the background. It helps an integration handle repeated messages and recover work after a processing worker stops.
 
 A payment notification, or **webhook**, is an HTTP message from a payment provider. If the provider does not receive a response, it may send the same message again. The receiver needs to recognize that retry and avoid repeating the work.
 
-For example, a provider sends an event, loses the response, and retries while a worker is restarting. PulseGate remembers the accepted event, acknowledges the retry, and lets a worker resume unfinished processing. It can keep accepting events while a worker is down, as long as Redis is available and the queue has room.
+For example, a provider sends an event, loses the response, and retries while a worker is restarting. Hook Guard remembers the accepted event, acknowledges the retry, and lets a worker resume unfinished processing. It can keep accepting events while a worker is down, as long as Redis is available and the queue has room.
 
-The included risk worker shows what can happen after an event is accepted: it reads the transaction and records an Allow or Review decision. Its model uses synthetic data and demonstrates the workflow; it is not a validated fraud detector. PulseGate does not move money.
+The included risk worker shows what can happen after an event is accepted: it reads the transaction and records an Allow or Review decision. Its model uses synthetic data and demonstrates the workflow; it is not a validated fraud detector. Hook Guard does not move money.
 
 ## Run locally
 
@@ -16,13 +16,13 @@ Install Docker with Compose. Copy `.env.example` to `.env`, replace its placehol
 docker compose up --build -d
 ```
 
-Open [PulseGate](http://localhost:8080). Enter the signing secret from `.env`, send a sample transaction, then replay it. The page shows whether the event was accepted or recognized as a repeat, its eventual decision, and how much work is still waiting.
+Open [Hook Guard](http://localhost:8080). Enter the signing secret from `.env`, send a sample transaction, then replay it. The page shows whether the event was accepted or recognized as a repeat, its eventual decision, and how much work is still waiting.
 
 Use a whole-number sample amount from 0 to 900,000 cents. You can press Enter in the amount field to send it. If a response is lost, choose **Retry last** to reuse that event's ID and data. Editing the form does not change the event used by Replay or Retry last.
 
 The decisions view shows when it last refreshed and labels old values when the connection fails. Clearing the signing secret also clears the displayed decisions.
 
-[Grafana](http://localhost:3000/d/pulsegate-operations/pulsegate-operations) shows the operations dashboard. [Prometheus](http://localhost:9090) collects the measurements behind it. These services are accessible only from your machine in the supplied setup.
+[Grafana](http://localhost:3000/d/hookguard-operations/hookguard-operations) shows the operations dashboard. [Prometheus](http://localhost:9090) collects the measurements behind it. These services are accessible only from your machine in the supplied setup.
 
 Use `docker compose down` to stop the services while preserving Redis data.
 
@@ -72,7 +72,7 @@ Redis keeps replay records for a limited time. Once a record expires or stored d
 - [API contract](docs/api.md) and [OpenAPI specification](docs/openapi.json)
 - [Local and Kubernetes operations](docs/operations.md)
 - [Security and data handling](docs/security.md)
-- [Local demo recording](../resources/pulse_gate/artifacts/demo/pulsegate.gif)
+- [Local demo recording](../resources/hook-guard/artifacts/demo/hookguard.gif)
 
 ## Development
 
@@ -91,4 +91,4 @@ python -m pytest -q -p no:cacheprovider
 ruff check scripts evals tests
 ```
 
-Set `PULSEGATE_TEST_REDIS_ADDR` to enable the Redis integration tests. The source tree contains the application, deployment configuration, client tools and tests.
+Set `HOOKGUARD_TEST_REDIS_ADDR` to enable the Redis integration tests. The source tree contains the application, deployment configuration, client tools and tests.

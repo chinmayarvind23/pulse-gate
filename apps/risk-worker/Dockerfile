@@ -6,8 +6,8 @@ COPY apps/risk-worker/model ./model
 RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
-RUN useradd --system --uid 10001 pulsegate
-COPY --from=build /src/target/release/pulsegate-risk-worker /usr/local/bin/pulsegate-risk-worker
+RUN useradd --system --uid 10001 hookguard
+COPY --from=build /src/target/release/hookguard-risk-worker /usr/local/bin/hookguard-risk-worker
 USER 10001
 EXPOSE 8081
-ENTRYPOINT ["pulsegate-risk-worker"]
+ENTRYPOINT ["hookguard-risk-worker"]

@@ -1,7 +1,7 @@
 apiVersion: 1
 datasources:
-  - name: PulseGate
-    uid: pulsegate-prometheus
+  - name: Hook Guard
+    uid: hookguard-prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090

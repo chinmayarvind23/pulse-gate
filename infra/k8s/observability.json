@@ -6,16 +6,16 @@
       "apiVersion": "v1",
       "kind": "ServiceAccount",
       "metadata": {
-        "name": "pulsegate-prometheus",
-        "namespace": "pulsegate"
+        "name": "hookguard-prometheus",
+        "namespace": "hookguard"
       }
     },
     {
       "apiVersion": "rbac.authorization.k8s.io/v1",
       "kind": "Role",
       "metadata": {
-        "name": "pulsegate-prometheus",
-        "namespace": "pulsegate"
+        "name": "hookguard-prometheus",
+        "namespace": "hookguard"
       },
       "rules": [
         {
@@ -37,44 +37,44 @@
       "apiVersion": "rbac.authorization.k8s.io/v1",
       "kind": "RoleBinding",
       "metadata": {
-        "name": "pulsegate-prometheus",
-        "namespace": "pulsegate"
+        "name": "hookguard-prometheus",
+        "namespace": "hookguard"
       },
       "subjects": [
         {
           "kind": "ServiceAccount",
-          "name": "pulsegate-prometheus",
-          "namespace": "pulsegate"
+          "name": "hookguard-prometheus",
+          "namespace": "hookguard"
         }
       ],
       "roleRef": {
         "apiGroup": "rbac.authorization.k8s.io",
         "kind": "Role",
-        "name": "pulsegate-prometheus"
+        "name": "hookguard-prometheus"
       }
     },
     {
       "apiVersion": "v1",
       "kind": "ConfigMap",
       "metadata": {
-        "name": "pulsegate-prometheus",
-        "namespace": "pulsegate"
+        "name": "hookguard-prometheus",
+        "namespace": "hookguard"
       },
       "data": {
-        "prometheus.yml": "global:\n  scrape_interval: 5s\nscrape_configs:\n  - job_name: pulsegate-pods\n    kubernetes_sd_configs:\n      - role: pod\n        namespaces:\n          names: [pulsegate]\n    relabel_configs:\n      - source_labels: [__meta_kubernetes_pod_label_app]\n        regex: gateway|risk-worker\n        action: keep\n      - source_labels: [__meta_kubernetes_pod_container_port_number]\n        regex: 8080|8081\n        action: keep\n      - source_labels: [__meta_kubernetes_pod_label_app]\n        target_label: job\n      - source_labels: [__meta_kubernetes_pod_name]\n        target_label: pod\n"
+        "prometheus.yml": "global:\n  scrape_interval: 5s\nscrape_configs:\n  - job_name: hookguard-pods\n    kubernetes_sd_configs:\n      - role: pod\n        namespaces:\n          names: [hookguard]\n    relabel_configs:\n      - source_labels: [__meta_kubernetes_pod_label_app]\n        regex: gateway|risk-worker\n        action: keep\n      - source_labels: [__meta_kubernetes_pod_container_port_number]\n        regex: 8080|8081\n        action: keep\n      - source_labels: [__meta_kubernetes_pod_label_app]\n        target_label: job\n      - source_labels: [__meta_kubernetes_pod_name]\n        target_label: pod\n"
       }
     },
     {
       "apiVersion": "v1",
       "kind": "ConfigMap",
       "metadata": {
-        "name": "pulsegate-grafana",
-        "namespace": "pulsegate"
+        "name": "hookguard-grafana",
+        "namespace": "hookguard"
       },
       "data": {
-        "datasources.yml": "apiVersion: 1\ndatasources:\n  - name: PulseGate\n    uid: pulsegate-prometheus\n    type: prometheus\n    access: proxy\n    url: http://prometheus:9090\n    isDefault: true\n    editable: false\n",
-        "dashboards.yml": "apiVersion: 1\nproviders:\n  - name: PulseGate\n    folder: PulseGate\n    type: file\n    options:\n      path: /var/lib/grafana/dashboards\n",
-        "pulsegate.json": "{\n  \"refresh\": \"5s\",\n  \"title\": \"PulseGate operations\",\n  \"schemaVersion\": 39,\n  \"panels\": [\n    {\n      \"id\": 1,\n      \"targets\": [\n        {\n          \"expr\": \"sum(rate(pulsegate_http_requests_total{code=\\\"202\\\"}[1m]))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"pulsegate-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 0.0,\n        \"w\": 12,\n        \"x\": 0,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"reqps\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Admission rate\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 2,\n      \"targets\": [\n        {\n          \"expr\": \"histogram_quantile(0.99,sum by(le)(rate(pulsegate_ack_duration_seconds_bucket[1m])))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"pulsegate-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 0.0,\n        \"w\": 12,\n        \"x\": 12,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"s\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Acknowledgement tail\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 3,\n      \"targets\": [\n        {\n          \"expr\": \"sum(rate(pulsegate_duplicates_total[1m]))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"pulsegate-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 8.0,\n        \"w\": 12,\n        \"x\": 0,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"reqps\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Repeated deliveries\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 4,\n      \"targets\": [\n        {\n          \"expr\": \"sum(rate(pulsegate_admission_errors_total[1m]))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"pulsegate-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 8.0,\n        \"w\": 12,\n        \"x\": 12,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"reqps\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Admission errors\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 5,\n      \"targets\": [\n        {\n          \"expr\": \"max(pulsegate_queue_outstanding)\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"pulsegate-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 16.0,\n        \"w\": 12,\n        \"x\": 0,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"short\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Outstanding queue\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 6,\n      \"targets\": [\n        {\n          \"expr\": \"sum(rate(pulsegate_worker_decisions_total[1m]))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"pulsegate-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 16.0,\n        \"w\": 12,\n        \"x\": 12,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"ops\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Worker decisions\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 7,\n      \"targets\": [\n        {\n          \"expr\": \"sum(pulsegate_worker_reclaimed_total)\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"pulsegate-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 24.0,\n        \"w\": 12,\n        \"x\": 0,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"short\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Reclaimed work\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 8,\n      \"targets\": [\n        {\n          \"expr\": \"sum(pulsegate_worker_dead_letters_total)\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"pulsegate-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 24.0,\n        \"w\": 12,\n        \"x\": 12,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"short\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Rejected stream entries\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    }\n  ],\n  \"time\": {\n    \"from\": \"now-15m\",\n    \"to\": \"now\"\n  },\n  \"uid\": \"pulsegate-operations\",\n  \"version\": 1\n}\n"
+        "datasources.yml": "apiVersion: 1\ndatasources:\n  - name: Hook Guard\n    uid: hookguard-prometheus\n    type: prometheus\n    access: proxy\n    url: http://prometheus:9090\n    isDefault: true\n    editable: false\n",
+        "dashboards.yml": "apiVersion: 1\nproviders:\n  - name: Hook Guard\n    folder: Hook Guard\n    type: file\n    options:\n      path: /var/lib/grafana/dashboards\n",
+        "hookguard.json": "{\n  \"refresh\": \"5s\",\n  \"title\": \"Hook Guard operations\",\n  \"schemaVersion\": 39,\n  \"panels\": [\n    {\n      \"id\": 1,\n      \"targets\": [\n        {\n          \"expr\": \"sum(rate(hookguard_http_requests_total{code=\\\"202\\\"}[1m]))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"hookguard-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 0.0,\n        \"w\": 12,\n        \"x\": 0,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"reqps\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Admission rate\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 2,\n      \"targets\": [\n        {\n          \"expr\": \"histogram_quantile(0.99,sum by(le)(rate(hookguard_ack_duration_seconds_bucket[1m])))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"hookguard-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 0.0,\n        \"w\": 12,\n        \"x\": 12,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"s\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Acknowledgement tail\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 3,\n      \"targets\": [\n        {\n          \"expr\": \"sum(rate(hookguard_duplicates_total[1m]))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"hookguard-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 8.0,\n        \"w\": 12,\n        \"x\": 0,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"reqps\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Repeated deliveries\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 4,\n      \"targets\": [\n        {\n          \"expr\": \"sum(rate(hookguard_admission_errors_total[1m]))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"hookguard-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 8.0,\n        \"w\": 12,\n        \"x\": 12,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"reqps\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Admission errors\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 5,\n      \"targets\": [\n        {\n          \"expr\": \"max(hookguard_queue_outstanding)\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"hookguard-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 16.0,\n        \"w\": 12,\n        \"x\": 0,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"short\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Outstanding queue\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 6,\n      \"targets\": [\n        {\n          \"expr\": \"sum(rate(hookguard_worker_decisions_total[1m]))\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"hookguard-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 16.0,\n        \"w\": 12,\n        \"x\": 12,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"ops\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Worker decisions\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 7,\n      \"targets\": [\n        {\n          \"expr\": \"sum(hookguard_worker_reclaimed_total)\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"hookguard-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 24.0,\n        \"w\": 12,\n        \"x\": 0,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"short\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Reclaimed work\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    },\n    {\n      \"id\": 8,\n      \"targets\": [\n        {\n          \"expr\": \"sum(hookguard_worker_dead_letters_total)\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"datasource\": {\n        \"uid\": \"hookguard-prometheus\",\n        \"type\": \"prometheus\"\n      },\n      \"type\": \"timeseries\",\n      \"gridPos\": {\n        \"y\": 24.0,\n        \"w\": 12,\n        \"x\": 12,\n        \"h\": 8\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"short\"\n        },\n        \"overrides\": []\n      },\n      \"title\": \"Rejected stream entries\",\n      \"options\": {\n        \"legend\": {\n          \"displayMode\": \"list\",\n          \"placement\": \"bottom\"\n        }\n      }\n    }\n  ],\n  \"time\": {\n    \"from\": \"now-15m\",\n    \"to\": \"now\"\n  },\n  \"uid\": \"hookguard-operations\",\n  \"version\": 1\n}\n"
       }
     },
     {
@@ -82,7 +82,7 @@
       "kind": "Deployment",
       "metadata": {
         "name": "prometheus",
-        "namespace": "pulsegate"
+        "namespace": "hookguard"
       },
       "spec": {
         "replicas": 1,
@@ -138,11 +138,11 @@
               {
                 "name": "config",
                 "configMap": {
-                  "name": "pulsegate-prometheus"
+                  "name": "hookguard-prometheus"
                 }
               }
             ],
-            "serviceAccountName": "pulsegate-prometheus"
+            "serviceAccountName": "hookguard-prometheus"
           }
         }
       }
@@ -152,7 +152,7 @@
       "kind": "Service",
       "metadata": {
         "name": "prometheus",
-        "namespace": "pulsegate"
+        "namespace": "hookguard"
       },
       "spec": {
         "selector": {
@@ -171,7 +171,7 @@
       "kind": "Deployment",
       "metadata": {
         "name": "grafana",
-        "namespace": "pulsegate"
+        "namespace": "hookguard"
       },
       "spec": {
         "replicas": 1,
@@ -221,8 +221,8 @@
                   },
                   {
                     "name": "config",
-                    "mountPath": "/var/lib/grafana/dashboards/pulsegate.json",
-                    "subPath": "pulsegate.json",
+                    "mountPath": "/var/lib/grafana/dashboards/hookguard.json",
+                    "subPath": "hookguard.json",
                     "readOnly": true
                   }
                 ],
@@ -261,7 +261,7 @@
               {
                 "name": "config",
                 "configMap": {
-                  "name": "pulsegate-grafana"
+                  "name": "hookguard-grafana"
                 }
               }
             ]
@@ -274,7 +274,7 @@
       "kind": "Service",
       "metadata": {
         "name": "grafana",
-        "namespace": "pulsegate"
+        "namespace": "hookguard"
       },
       "spec": {
         "selector": {

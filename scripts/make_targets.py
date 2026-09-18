@@ -24,7 +24,7 @@ def main():
         parser.error("counts must be positive")
     if args.unique is not None and args.unique > args.count:
         parser.error("unique events cannot exceed delivery count")
-    secret = os.environ["PULSEGATE_HMAC_SECRET"]
+    secret = os.environ["HOOKGUARD_HMAC_SECRET"]
     out = external_directory(args.output)
     unique = args.unique or args.count
     path = out / "targets.jsonl"

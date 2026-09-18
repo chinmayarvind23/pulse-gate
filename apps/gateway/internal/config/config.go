@@ -22,25 +22,25 @@ type Config struct {
 // parsing at the process boundary prevents repeated conversions and makes bad
 // production configuration fail fast instead of becoming a request-time surprise.
 func Load() (Config, error) {
-	ttlSeconds, err := intEnv("PULSEGATE_IDEMPOTENCY_TTL_SECONDS", 86400)
+	ttlSeconds, err := intEnv("HOOKGUARD_IDEMPOTENCY_TTL_SECONDS", 86400)
 	if err != nil {
 		return Config{}, err
 	}
-	maxBody, err := intEnv("PULSEGATE_MAX_BODY_BYTES", 65536)
+	maxBody, err := intEnv("HOOKGUARD_MAX_BODY_BYTES", 65536)
 	if err != nil {
 		return Config{}, err
 	}
-	maxQueue, err := intEnv("PULSEGATE_MAX_QUEUE", 1000000)
+	maxQueue, err := intEnv("HOOKGUARD_MAX_QUEUE", 1000000)
 	if err != nil || maxQueue <= 0 {
-		return Config{}, fmt.Errorf("PULSEGATE_MAX_QUEUE must be positive")
+		return Config{}, fmt.Errorf("HOOKGUARD_MAX_QUEUE must be positive")
 	}
 
 	cfg := Config{
-		ListenAddr:     env("PULSEGATE_LISTEN_ADDR", ":8080"),
-		RedisAddr:      env("PULSEGATE_REDIS_ADDR", "localhost:6379"),
-		HMACSecret:     env("PULSEGATE_HMAC_SECRET", ""),
-		Stream:         env("PULSEGATE_STREAM", "payment_events"),
-		ResultStream:   env("PULSEGATE_RESULT_STREAM", "risk_decisions"),
+		ListenAddr:     env("HOOKGUARD_LISTEN_ADDR", ":8080"),
+		RedisAddr:      env("HOOKGUARD_REDIS_ADDR", "localhost:6379"),
+		HMACSecret:     env("HOOKGUARD_HMAC_SECRET", ""),
+		Stream:         env("HOOKGUARD_STREAM", "payment_events"),
+		ResultStream:   env("HOOKGUARD_RESULT_STREAM", "risk_decisions"),
 		IdempotencyTTL: time.Duration(ttlSeconds) * time.Second,
 		MaxBodyBytes:   int64(maxBody),
 		MaxQueue:       int64(maxQueue),
@@ -49,7 +49,7 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("input and result streams must differ")
 	}
 	if cfg.HMACSecret == "" {
-		return Config{}, fmt.Errorf("PULSEGATE_HMAC_SECRET is required")
+		return Config{}, fmt.Errorf("HOOKGUARD_HMAC_SECRET is required")
 	}
 	if ttlSeconds <= 0 || ttlSeconds > 31536000 {
 		return Config{}, fmt.Errorf("idempotency TTL must be positive")

@@ -83,7 +83,7 @@ def main():
     if args.rps <= 0 or args.seconds <= 0 or args.rps * args.seconds > 1000000:
         parser.error("use positive rate/duration with at most 1000000 attempts")
     out = external_directory(args.output)
-    result = asyncio.run(run(args.url, os.environ["PULSEGATE_HMAC_SECRET"], args.rps, args.seconds))
+    result = asyncio.run(run(args.url, os.environ["HOOKGUARD_HMAC_SECRET"], args.rps, args.seconds))
     (out / "load.json").write_text(json.dumps({**provenance(), **result}) + "\n")
     print(out / "load.json")
 

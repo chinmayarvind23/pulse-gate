@@ -1,18 +1,18 @@
 {
   "refresh": "5s",
-  "title": "PulseGate operations",
+  "title": "Hook Guard operations",
   "schemaVersion": 39,
   "panels": [
     {
       "id": 1,
       "targets": [
         {
-          "expr": "sum(rate(pulsegate_http_requests_total{code=\"202\"}[1m]))",
+          "expr": "sum(rate(hookguard_http_requests_total{code=\"202\"}[1m]))",
           "refId": "A"
         }
       ],
       "datasource": {
-        "uid": "pulsegate-prometheus",
+        "uid": "hookguard-prometheus",
         "type": "prometheus"
       },
       "type": "timeseries",
@@ -40,12 +40,12 @@
       "id": 2,
       "targets": [
         {
-          "expr": "histogram_quantile(0.99,sum by(le)(rate(pulsegate_ack_duration_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.99,sum by(le)(rate(hookguard_ack_duration_seconds_bucket[1m])))",
           "refId": "A"
         }
       ],
       "datasource": {
-        "uid": "pulsegate-prometheus",
+        "uid": "hookguard-prometheus",
         "type": "prometheus"
       },
       "type": "timeseries",
@@ -73,12 +73,12 @@
       "id": 3,
       "targets": [
         {
-          "expr": "sum(rate(pulsegate_duplicates_total[1m]))",
+          "expr": "sum(rate(hookguard_duplicates_total[1m]))",
           "refId": "A"
         }
       ],
       "datasource": {
-        "uid": "pulsegate-prometheus",
+        "uid": "hookguard-prometheus",
         "type": "prometheus"
       },
       "type": "timeseries",
@@ -106,12 +106,12 @@
       "id": 4,
       "targets": [
         {
-          "expr": "sum(rate(pulsegate_admission_errors_total[1m]))",
+          "expr": "sum(rate(hookguard_admission_errors_total[1m]))",
           "refId": "A"
         }
       ],
       "datasource": {
-        "uid": "pulsegate-prometheus",
+        "uid": "hookguard-prometheus",
         "type": "prometheus"
       },
       "type": "timeseries",
@@ -139,12 +139,12 @@
       "id": 5,
       "targets": [
         {
-          "expr": "max(pulsegate_queue_outstanding)",
+          "expr": "max(hookguard_queue_outstanding)",
           "refId": "A"
         }
       ],
       "datasource": {
-        "uid": "pulsegate-prometheus",
+        "uid": "hookguard-prometheus",
         "type": "prometheus"
       },
       "type": "timeseries",
@@ -172,12 +172,12 @@
       "id": 6,
       "targets": [
         {
-          "expr": "sum(rate(pulsegate_worker_decisions_total[1m]))",
+          "expr": "sum(rate(hookguard_worker_decisions_total[1m]))",
           "refId": "A"
         }
       ],
       "datasource": {
-        "uid": "pulsegate-prometheus",
+        "uid": "hookguard-prometheus",
         "type": "prometheus"
       },
       "type": "timeseries",
@@ -205,12 +205,12 @@
       "id": 7,
       "targets": [
         {
-          "expr": "sum(pulsegate_worker_reclaimed_total)",
+          "expr": "sum(hookguard_worker_reclaimed_total)",
           "refId": "A"
         }
       ],
       "datasource": {
-        "uid": "pulsegate-prometheus",
+        "uid": "hookguard-prometheus",
         "type": "prometheus"
       },
       "type": "timeseries",
@@ -238,12 +238,12 @@
       "id": 8,
       "targets": [
         {
-          "expr": "sum(pulsegate_worker_dead_letters_total)",
+          "expr": "sum(hookguard_worker_dead_letters_total)",
           "refId": "A"
         }
       ],
       "datasource": {
-        "uid": "pulsegate-prometheus",
+        "uid": "hookguard-prometheus",
         "type": "prometheus"
       },
       "type": "timeseries",
@@ -272,6 +272,6 @@
     "from": "now-15m",
     "to": "now"
   },
-  "uid": "pulsegate-operations",
+  "uid": "hookguard-operations",
   "version": 1
 }

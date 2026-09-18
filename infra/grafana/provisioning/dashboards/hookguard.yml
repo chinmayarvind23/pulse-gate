@@ -1,7 +1,7 @@
 apiVersion: 1
 providers:
-  - name: PulseGate
-    folder: PulseGate
+  - name: Hook Guard
+    folder: Hook Guard
     type: file
     options:
       path: /var/lib/grafana/dashboards

@@ -10,4 +10,4 @@ def test_encoding_is_deterministic():
 
 def test_signature_header_present():
     """The client must send a complete SHA-256 signature."""
-    assert len(signed_headers("secret", b"payload")["X-PulseGate-Signature"]) == 64
+    assert len(signed_headers("secret", b"payload")["X-HookGuard-Signature"]) == 64

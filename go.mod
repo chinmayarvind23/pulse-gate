@@ -1,4 +1,4 @@
-module github.com/chinmayarvind23/pulse_gate
+module github.com/chinmayarvind23/hook-guard
 
 go 1.23
 

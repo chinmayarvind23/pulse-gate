@@ -6,7 +6,7 @@ Sending an event and getting its decision are separate steps. `202 Accepted` mea
 
 ## Submit an event
 
-Send `POST /v1/events` with `Content-Type: application/json` and `X-PulseGate-Signature`, the lowercase hexadecimal HMAC-SHA256 of the exact request body using `PULSEGATE_HMAC_SECRET`.
+Send `POST /v1/events` with `Content-Type: application/json` and `X-HookGuard-Signature`, the lowercase hexadecimal HMAC-SHA256 of the exact request body using `HOOKGUARD_HMAC_SECRET`.
 
 The signature lets the gateway check that the sender knows the shared secret and that the message bytes have not changed. Sign the exact bytes you send, including spaces and line breaks. The sample client below handles this for you.
 
@@ -27,7 +27,7 @@ Every field is required. Fields cannot be `null`, and extra fields or repeated J
 | `velocity_5m`, `velocity_1h` | Transaction counts over the preceding five minutes and hour. Non-negative signed 32-bit integers. |
 | `prior_declines` | Count of earlier declines. A non-negative signed 32-bit integer. |
 
-The sender supplies these transaction details; PulseGate validates the fields but does not look up the underlying payment history.
+The sender supplies these transaction details; Hook Guard validates the fields but does not look up the underlying payment history.
 
 | Status | Meaning |
 | --- | --- |
@@ -38,14 +38,14 @@ The sender supplies these transaction details; PulseGate validates the fields bu
 | 413 | Body exceeds the configured limit |
 | 503 | Redis is unavailable or the queue is full; retry later |
 
-A repeated event receives `202` with `X-PulseGate-Duplicate: true`. If the same retained ID arrives with different field values, the response is `409`. Changing only JSON spacing or field order still counts as the same event: after checking the original signature, the gateway puts the fields into a consistent format before comparing them.
+A repeated event receives `202` with `X-HookGuard-Duplicate: true`. If the same retained ID arrives with different field values, the response is `409`. Changing only JSON spacing or field order still counts as the same event: after checking the original signature, the gateway puts the fields into a consistent format before comparing them.
 
 A `503` response includes `Retry-After: 1`, asking the sender to wait before retrying. A `202` response has an empty body; read the decisions endpoint to see the worker's result.
 
 The included client signs requests consistently:
 
 ```sh
-export PULSEGATE_HMAC_SECRET='<your secret>'
+export HOOKGUARD_HMAC_SECRET='<your secret>'
 python -m scripts.smoke_test
 ```
 

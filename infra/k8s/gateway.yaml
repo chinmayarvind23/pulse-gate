@@ -1,6 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: gateway, namespace: pulsegate}
+metadata: {name: gateway, namespace: hookguard}
 spec:
   replicas: 2
   selector: {matchLabels: {app: gateway}}
@@ -11,13 +11,13 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
       containers:
         - name: gateway
-          image: pulsegate/gateway:local
+          image: hookguard/gateway:local
           imagePullPolicy: IfNotPresent
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           ports: [{containerPort: 8080}]
           env:
-            - {name: PULSEGATE_REDIS_ADDR, value: "redis:6379"}
-            - {name: PULSEGATE_HMAC_SECRET, valueFrom: {secretKeyRef: {name: pulsegate-secrets, key: hmac-secret}}}
+            - {name: HOOKGUARD_REDIS_ADDR, value: "redis:6379"}
+            - {name: HOOKGUARD_HMAC_SECRET, valueFrom: {secretKeyRef: {name: hookguard-secrets, key: hmac-secret}}}
           startupProbe: {httpGet: {path: /healthz, port: 8080}, periodSeconds: 2, failureThreshold: 30}
           readinessProbe: {httpGet: {path: /readyz, port: 8080}, initialDelaySeconds: 1, periodSeconds: 2}
           livenessProbe: {httpGet: {path: /healthz, port: 8080}, initialDelaySeconds: 3, periodSeconds: 5}
@@ -27,7 +27,7 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: gateway, namespace: pulsegate}
+metadata: {name: gateway, namespace: hookguard}
 spec:
   selector: {app: gateway}
   ports: [{port: 80, targetPort: 8080}]

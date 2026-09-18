@@ -10,26 +10,26 @@ services:
       timeout: 1s
       retries: 20
   gateway:
-    image: pulsegate/gateway:local
+    image: hookguard/gateway:local
     build:
       context: .
       dockerfile: apps/gateway/Dockerfile
     environment:
-      PULSEGATE_REDIS_ADDR: redis:6379
-      PULSEGATE_HMAC_SECRET: ${PULSEGATE_HMAC_SECRET:?Set PULSEGATE_HMAC_SECRET in .env}
-      PULSEGATE_MAX_QUEUE: ${PULSEGATE_MAX_QUEUE:-1000000}
+      HOOKGUARD_REDIS_ADDR: redis:6379
+      HOOKGUARD_HMAC_SECRET: ${HOOKGUARD_HMAC_SECRET:?Set HOOKGUARD_HMAC_SECRET in .env}
+      HOOKGUARD_MAX_QUEUE: ${HOOKGUARD_MAX_QUEUE:-1000000}
     depends_on:
       redis: {condition: service_healthy}
     ports: ["127.0.0.1:8080:8080"]
     restart: unless-stopped
   risk-worker:
-    image: pulsegate/risk-worker:local
+    image: hookguard/risk-worker:local
     build:
       context: .
       dockerfile: apps/risk-worker/Dockerfile
     environment:
-      PULSEGATE_REDIS_ADDR: redis:6379
-      PULSEGATE_WORKER_BATCH: 256
+      HOOKGUARD_REDIS_ADDR: redis:6379
+      HOOKGUARD_WORKER_BATCH: 256
       RUST_LOG: info
     depends_on:
       redis: {condition: service_healthy}

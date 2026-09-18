@@ -13,9 +13,9 @@ import (
 // clientForTest isolates integration keys so unrelated Redis data remains untouched.
 func clientForTest(t *testing.T) (*redis.Client, string) {
 	t.Helper()
-	addr := os.Getenv("PULSEGATE_TEST_REDIS_ADDR")
+	addr := os.Getenv("HOOKGUARD_TEST_REDIS_ADDR")
 	if addr == "" {
-		t.Skip("set PULSEGATE_TEST_REDIS_ADDR for Redis integration")
+		t.Skip("set HOOKGUARD_TEST_REDIS_ADDR for Redis integration")
 	}
 	c := redis.NewClient(&redis.Options{Addr: addr})
 	t.Cleanup(func() { c.Close() })

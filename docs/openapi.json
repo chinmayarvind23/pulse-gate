@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "PulseGate",
+    "title": "Hook Guard",
     "version": "0.1.0",
     "description": "Payment-event admission and asynchronous risk decisions. HMAC covers raw body for POST and UTF-8 path for protected GET."
   },
@@ -33,7 +33,7 @@
           "202": {
             "description": "Admitted or already known",
             "headers": {
-              "X-PulseGate-Duplicate": {
+              "X-HookGuard-Duplicate": {
                 "schema": {
                   "type": "string",
                   "enum": [
@@ -326,7 +326,7 @@
       "HMAC": {
         "type": "apiKey",
         "in": "header",
-        "name": "X-PulseGate-Signature",
+        "name": "X-HookGuard-Signature",
         "description": "Hex HMAC-SHA256, with shared secret"
       }
     },

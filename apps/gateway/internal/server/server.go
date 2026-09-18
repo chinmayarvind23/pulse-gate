@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/admission"
-	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/config"
-	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/model"
-	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/signature"
-	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/telemetry"
+	"github.com/chinmayarvind23/hook-guard/apps/gateway/internal/admission"
+	"github.com/chinmayarvind23/hook-guard/apps/gateway/internal/config"
+	"github.com/chinmayarvind23/hook-guard/apps/gateway/internal/model"
+	"github.com/chinmayarvind23/hook-guard/apps/gateway/internal/signature"
+	"github.com/chinmayarvind23/hook-guard/apps/gateway/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
@@ -80,7 +80,7 @@ func (a *App) handleEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if !signature.Valid(a.cfg.HMACSecret, body, r.Header.Get("X-PulseGate-Signature")) {
+	if !signature.Valid(a.cfg.HMACSecret, body, r.Header.Get("X-HookGuard-Signature")) {
 		a.respond(w, http.StatusUnauthorized, "invalid signature")
 		return
 	}
@@ -112,7 +112,7 @@ func (a *App) handleEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if result.Duplicate {
 		a.metrics.Duplicates.Inc()
-		w.Header().Set("X-PulseGate-Duplicate", "true")
+		w.Header().Set("X-HookGuard-Duplicate", "true")
 	}
 	a.respond(w, http.StatusAccepted, "")
 }

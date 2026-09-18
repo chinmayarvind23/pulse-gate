@@ -9,7 +9,7 @@ jobs:
         ports: ["6379:6379"]
         options: --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 1s --health-retries 20
     env:
-      PULSEGATE_TEST_REDIS_ADDR: 127.0.0.1:6379
+      HOOKGUARD_TEST_REDIS_ADDR: 127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

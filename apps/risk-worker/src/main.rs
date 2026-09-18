@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use pulsegate_risk_worker::model::{self, PaymentEvent, RiskDecision};
+use hookguard_risk_worker::model::{self, PaymentEvent, RiskDecision};
 use redis::{
     aio::{ConnectionManager, ConnectionManagerConfig},
     streams::{StreamAutoClaimReply, StreamId, StreamReadReply},
@@ -98,23 +98,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     model::parameters();
     let config = Arc::new(Config {
-        stream: setting("PULSEGATE_STREAM", "payment_events"),
-        result: setting("PULSEGATE_RESULT_STREAM", "risk_decisions"),
-        group: setting("PULSEGATE_WORKER_GROUP", "risk-workers"),
+        stream: setting("HOOKGUARD_STREAM", "payment_events"),
+        result: setting("HOOKGUARD_RESULT_STREAM", "risk_decisions"),
+        group: setting("HOOKGUARD_WORKER_GROUP", "risk-workers"),
         consumer: setting(
-            "PULSEGATE_WORKER_CONSUMER",
+            "HOOKGUARD_WORKER_CONSUMER",
             &format!("{}-{}", setting("HOSTNAME", "worker"), std::process::id()),
         ),
-        ttl: positive("PULSEGATE_IDEMPOTENCY_TTL_SECONDS", 86400)?,
-        reclaim_ms: positive("PULSEGATE_RECLAIM_IDLE_MS", 5000)?,
-        batch: positive("PULSEGATE_WORKER_BATCH", 256)?.min(1024) as usize,
+        ttl: positive("HOOKGUARD_IDEMPOTENCY_TTL_SECONDS", 86400)?,
+        reclaim_ms: positive("HOOKGUARD_RECLAIM_IDLE_MS", 5000)?,
+        batch: positive("HOOKGUARD_WORKER_BATCH", 256)?.min(1024) as usize,
     });
     if config.stream == config.result {
         return Err("input and result streams must differ".into());
     }
     let client = redis::Client::open(format!(
         "redis://{}/",
-        setting("PULSEGATE_REDIS_ADDR", "redis:6379")
+        setting("HOOKGUARD_REDIS_ADDR", "redis:6379")
     ))?;
     // Socket deadlines let the manager detect dead connections after pod replacement.
     let redis_config = ConnectionManagerConfig::new()
@@ -139,7 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/score", post(score_endpoint))
         .layer(DefaultBodyLimit::max(65536))
         .with_state(state);
-    let addr = setting("PULSEGATE_WORKER_HTTP_ADDR", "0.0.0.0:8081");
+    let addr = setting("HOOKGUARD_WORKER_HTTP_ADDR", "0.0.0.0:8081");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!(%addr,"worker listening");
     axum::serve(listener, app)
@@ -193,10 +193,10 @@ async fn metrics(State(s): State<AppState>) -> ([(header::HeaderName, &'static s
         c.xlen::<_, u64>(&s.config.stream),
     )
     .await;
-    let mut body=format!("# TYPE pulsegate_worker_decisions_total counter\npulsegate_worker_decisions_total {}\n# TYPE pulsegate_worker_duplicates_total counter\npulsegate_worker_duplicates_total {}\n# TYPE pulsegate_worker_errors_total counter\npulsegate_worker_errors_total {}\n# TYPE pulsegate_worker_reclaimed_total counter\npulsegate_worker_reclaimed_total {}\n# TYPE pulsegate_worker_dead_letters_total counter\npulsegate_worker_dead_letters_total {}\n# TYPE pulsegate_worker_ready gauge\npulsegate_worker_ready {}\n",s.stats.decisions.load(Ordering::Relaxed),s.stats.duplicates.load(Ordering::Relaxed),s.stats.errors.load(Ordering::Relaxed),s.stats.reclaimed.load(Ordering::Relaxed),s.stats.dead.load(Ordering::Relaxed),u8::from(s.stats.ready.load(Ordering::Relaxed)));
+    let mut body=format!("# TYPE hookguard_worker_decisions_total counter\nhookguard_worker_decisions_total {}\n# TYPE hookguard_worker_duplicates_total counter\nhookguard_worker_duplicates_total {}\n# TYPE hookguard_worker_errors_total counter\nhookguard_worker_errors_total {}\n# TYPE hookguard_worker_reclaimed_total counter\nhookguard_worker_reclaimed_total {}\n# TYPE hookguard_worker_dead_letters_total counter\nhookguard_worker_dead_letters_total {}\n# TYPE hookguard_worker_ready gauge\nhookguard_worker_ready {}\n",s.stats.decisions.load(Ordering::Relaxed),s.stats.duplicates.load(Ordering::Relaxed),s.stats.errors.load(Ordering::Relaxed),s.stats.reclaimed.load(Ordering::Relaxed),s.stats.dead.load(Ordering::Relaxed),u8::from(s.stats.ready.load(Ordering::Relaxed)));
     if let Ok(Ok(n)) = queued {
         body +=
-            &format!("# TYPE pulsegate_queue_outstanding gauge\npulsegate_queue_outstanding {n}\n")
+            &format!("# TYPE hookguard_queue_outstanding gauge\nhookguard_queue_outstanding {n}\n")
     }
     ([(header::CONTENT_TYPE, "text/plain; version=0.0.4")], body)
 }

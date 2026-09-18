@@ -4,7 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
-	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/signature"
+	"github.com/chinmayarvind23/hook-guard/apps/gateway/internal/signature"
 	"net/http"
 	"time"
 )
@@ -28,7 +28,7 @@ func (a *App) handleHome(w http.ResponseWriter, r *http.Request) {
 func (a *App) authorizedRead(w http.ResponseWriter, r *http.Request) bool {
 	// Inspection responses are tied to the current credentials and queue state.
 	w.Header().Set("Cache-Control", "no-store")
-	if !signature.Valid(a.cfg.HMACSecret, []byte(r.URL.Path), r.Header.Get("X-PulseGate-Signature")) {
+	if !signature.Valid(a.cfg.HMACSecret, []byte(r.URL.Path), r.Header.Get("X-HookGuard-Signature")) {
 		a.respond(w, http.StatusUnauthorized, "invalid signature")
 		return false
 	}

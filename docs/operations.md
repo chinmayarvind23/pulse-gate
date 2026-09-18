@@ -37,17 +37,17 @@ The operator page refreshes queue status and recent decisions every two seconds 
 
 | Variable | Default and purpose |
 | --- | --- |
-| PULSEGATE_HMAC_SECRET | Required signing secret |
-| PULSEGATE_REDIS_ADDR | Redis host and port |
-| PULSEGATE_STREAM | `payment_events`, input stream |
-| PULSEGATE_RESULT_STREAM | `risk_decisions`, output stream; must differ from input |
-| PULSEGATE_IDEMPOTENCY_TTL_SECONDS | `86400`, how long Redis remembers IDs to recognize repeats |
-| PULSEGATE_MAX_BODY_BYTES | `65536`, gateway body limit |
-| PULSEGATE_MAX_QUEUE | `1000000`, maximum number of unfinished events |
-| PULSEGATE_WORKER_GROUP | `risk-workers`, the workers sharing this queue |
-| PULSEGATE_WORKER_CONSUMER | Unique host/process identity unless explicitly supplied |
-| PULSEGATE_WORKER_BATCH | `256`, capped at 1024 |
-| PULSEGATE_RECLAIM_IDLE_MS | `5000`, how long assigned work can sit idle before another worker can pick it up |
+| HOOKGUARD_HMAC_SECRET | Required signing secret |
+| HOOKGUARD_REDIS_ADDR | Redis host and port |
+| HOOKGUARD_STREAM | `payment_events`, input stream |
+| HOOKGUARD_RESULT_STREAM | `risk_decisions`, output stream; must differ from input |
+| HOOKGUARD_IDEMPOTENCY_TTL_SECONDS | `86400`, how long Redis remembers IDs to recognize repeats |
+| HOOKGUARD_MAX_BODY_BYTES | `65536`, gateway body limit |
+| HOOKGUARD_MAX_QUEUE | `1000000`, maximum number of unfinished events |
+| HOOKGUARD_WORKER_GROUP | `risk-workers`, the workers sharing this queue |
+| HOOKGUARD_WORKER_CONSUMER | Unique host/process identity unless explicitly supplied |
+| HOOKGUARD_WORKER_BATCH | `256`, capped at 1024 |
+| HOOKGUARD_RECLAIM_IDLE_MS | `5000`, how long assigned work can sit idle before another worker can pick it up |
 
 Compose sets service addresses explicitly. Supply additional variables to both gateway and worker when changing stream or retention settings. Do not give replicas the same explicit consumer name.
 
@@ -67,38 +67,38 @@ Redis requests a disk sync once per second. A host failure can lose recent accep
 
 ## Kubernetes
 
-Build `pulsegate/gateway:local` and `pulsegate/risk-worker:local` using Compose. Make those images available to your cluster. For a local kind cluster:
+Build `hookguard/gateway:local` and `hookguard/risk-worker:local` using Compose. Make those images available to your cluster. For a local kind cluster:
 
 ```sh
-kind create cluster --name pulsegate
-kind load docker-image --name pulsegate pulsegate/gateway:local pulsegate/risk-worker:local
+kind create cluster --name hookguard
+kind load docker-image --name hookguard hookguard/gateway:local hookguard/risk-worker:local
 kubectl apply -f infra/k8s/namespace.yaml
-kubectl -n pulsegate create secret generic pulsegate-secrets --from-literal=hmac-secret="$PULSEGATE_HMAC_SECRET"
+kubectl -n hookguard create secret generic hookguard-secrets --from-literal=hmac-secret="$HOOKGUARD_HMAC_SECRET"
 kubectl apply -f infra/k8s/redis.yaml -f infra/k8s/gateway.yaml -f infra/k8s/worker.yaml -f infra/k8s/hpa.yaml
-kubectl -n pulsegate rollout status deployment/gateway
-kubectl -n pulsegate rollout status deployment/risk-worker
-kubectl -n pulsegate port-forward service/gateway 8080:80
+kubectl -n hookguard rollout status deployment/gateway
+kubectl -n hookguard rollout status deployment/risk-worker
+kubectl -n hookguard port-forward service/gateway 8080:80
 ```
 
 A default dynamic StorageClass must be available so Kubernetes can allocate storage for Redis's persistent volume claim (PVC). This lets Redis reuse its saved files after a pod is replaced. Redis uses the Recreate strategy to stop the old process before starting another one on the same files.
 
 Application containers run without root privileges, with reduced permissions and a read-only root filesystem. Startup probes allow time to start, readiness probes decide whether a service can receive work, and liveness probes detect a process that no longer answers.
 
-Horizontal Pod Autoscalers (HPAs) adjust the number of application replicas using CPU readings. They require metrics-server. Confirm the readings with `kubectl top pods -n pulsegate` and inspect the policies with `kubectl get hpa -n pulsegate`. CPU readings alone do not explain a stuck queue; also check unfinished and pending events.
+Horizontal Pod Autoscalers (HPAs) adjust the number of application replicas using CPU readings. They require metrics-server. Confirm the readings with `kubectl top pods -n hookguard` and inspect the policies with `kubectl get hpa -n hookguard`. CPU readings alone do not explain a stuck queue; also check unfinished and pending events.
 
 Apply these resources to let Prometheus find the application pods and load the Grafana dashboard:
 
 ```sh
 kubectl apply -f infra/k8s/observability.json
-kubectl -n pulsegate rollout status deployment/prometheus
-kubectl -n pulsegate rollout status deployment/grafana
+kubectl -n hookguard rollout status deployment/prometheus
+kubectl -n hookguard rollout status deployment/grafana
 ```
 
 Prometheus discovers each gateway and worker replica through a namespace-scoped service account. Run these forwards in separate terminals:
 
 ```sh
-kubectl -n pulsegate port-forward service/prometheus 29090:9090 --address 127.0.0.1
-kubectl -n pulsegate port-forward service/grafana 23000:3000 --address 127.0.0.1
+kubectl -n hookguard port-forward service/prometheus 29090:9090 --address 127.0.0.1
+kubectl -n hookguard port-forward service/grafana 23000:3000 --address 127.0.0.1
 ```
 
-Open Prometheus at `http://127.0.0.1:29090` and the dashboard at `http://127.0.0.1:23000/d/pulsegate-operations/pulsegate-operations`. Grafana permits anonymous Viewer access in this local configuration. For a separate cluster configuration, add `--kubeconfig /path/to/kubeconfig` to every kubectl command rather than changing your default context.
+Open Prometheus at `http://127.0.0.1:29090` and the dashboard at `http://127.0.0.1:23000/d/hookguard-operations/hookguard-operations`. Grafana permits anonymous Viewer access in this local configuration. For a separate cluster configuration, add `--kubeconfig /path/to/kubeconfig` to every kubectl command rather than changing your default context.

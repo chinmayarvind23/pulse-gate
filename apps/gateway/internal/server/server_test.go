@@ -4,7 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/chinmayarvind23/pulse_gate/apps/gateway/internal/config"
+	"github.com/chinmayarvind23/hook-guard/apps/gateway/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,9 +14,9 @@ import (
 
 // TestOperatorBoundary protects operational data while keeping the static client public.
 func TestOperatorBoundary(t *testing.T) {
-	addr := os.Getenv("PULSEGATE_TEST_REDIS_ADDR")
+	addr := os.Getenv("HOOKGUARD_TEST_REDIS_ADDR")
 	if addr == "" {
-		t.Skip("Redis integration requires PULSEGATE_TEST_REDIS_ADDR")
+		t.Skip("Redis integration requires HOOKGUARD_TEST_REDIS_ADDR")
 	}
 	cfg := config.Config{RedisAddr: addr, HMACSecret: "test-secret", Stream: "test:operator:events", ResultStream: "test:operator:results", IdempotencyTTL: time.Minute, MaxBodyBytes: 65536, MaxQueue: 100}
 	app, err := New(cfg)
@@ -37,7 +37,7 @@ func TestOperatorBoundary(t *testing.T) {
 		mac := hmac.New(sha256.New, []byte(cfg.HMACSecret))
 		mac.Write([]byte(path))
 		req = httptest.NewRequest("GET", path, nil)
-		req.Header.Set("X-PulseGate-Signature", hex.EncodeToString(mac.Sum(nil)))
+		req.Header.Set("X-HookGuard-Signature", hex.EncodeToString(mac.Sum(nil)))
 		w = httptest.NewRecorder()
 		app.Handler().ServeHTTP(w, req)
 		if w.Code != 200 {
