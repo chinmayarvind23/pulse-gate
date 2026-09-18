@@ -1,13 +1,15 @@
 # Security and data handling
 
-The gateway verifies HMAC-SHA256 over raw bytes before parsing event data. It uses constant-time comparison, bounds request bodies and rejects malformed, missing, null, extra and ambiguous fields. Canonicalization happens only after authentication. Reusing an event identifier with a changed validated payload is a conflict.
+Each event carries an HMAC-SHA256 signature made with a secret shared by the sender and gateway. The gateway checks it against the exact message bytes before reading the event fields. This checks that the sender knows the secret and that the message has not changed. The comparison uses constant-time code to avoid revealing matching parts through comparison timing.
 
-The local operator page takes the signing secret into tab memory. It does not store it in browser storage or send it as an ordinary request field. Recent decisions and queue inspection require a signature over the requested path. The page renders event content as text, not injected HTML.
+The gateway also limits message size and rejects missing, invalid, repeated or unexpected fields. After checking the signature, it puts valid fields into a consistent format for comparison. Reusing a remembered event ID with different data is rejected.
 
-Keep `.env` out of version control. Kubernetes deployments read the signing key from a Secret. Replace example values and restrict access to both the source environment and cluster credentials. Rotating the signing key requires coordinated provider and gateway configuration.
+The operator page keeps the signing secret in the current tab's memory. It does not save it in browser storage or include it as a request field. Reading decisions or queue status also requires a signature, made from the requested URL path. Event data is displayed as text so it cannot be treated as page code.
 
-The local deployment uses synthetic transaction fields. It does not collect card numbers, account credentials or personal identity records. Application logs report processing failures and identifiers without logging signing secrets or complete request bodies.
+Keep `.env` out of version control. Kubernetes reads the signing key from a Secret. Replace the example values and limit who can read the key and cluster credentials. When changing the key, update the sender and gateway together so they continue to agree.
 
-Redis and worker diagnostics are internal services. Compose binds diagnostic ports to loopback. Before placing any endpoint on an untrusted network, configure transport encryption, access control and request quotas appropriate to that environment. The supplied local configuration does not make a production payments security claim.
+The examples use synthetic transaction data. The event format does not include card numbers, account passwords or identity records. Use event IDs that do not contain personal information. Logs include event identifiers and processing failures, but omit signing secrets and full request bodies.
 
-Replay protection depends on retained Redis state and the configured identifier lifetime. A valid signature alone does not establish transaction freshness. Actual external side effects need their own durable idempotency boundary; a recorded risk decision is not a money transfer.
+Redis and the worker's direct scoring API are internal services. Compose exposes their ports only on your own machine. An installation on an untrusted network needs encrypted connections, access controls and request limits appropriate to that environment. The supplied setup is for local use.
+
+A valid signature can be copied along with an old message, so it does not prove that an event is new. Redis recognizes repeats using saved event IDs for a limited time. If a separate system uses a decision to move money, that system needs its own durable records and duplicate protection.
