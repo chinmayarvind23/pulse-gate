@@ -55,6 +55,8 @@ python -m scripts.smoke_test
 
 Both reads need the same signature header, computed over the UTF-8 URL path itself, such as `/v1/decisions`. They expose fixed views of the data, rather than accepting arbitrary Redis commands or key names.
 
+These responses use `Cache-Control: no-store` so browsers and intermediaries should not cache the authenticated views or their error responses.
+
 A decision contains `event_id`, `score`, `risky` and `model_version`. The score is a model output between zero and one. `risky` is true when the score reaches the model's saved threshold; the operator page displays this as Review. The model uses synthetic data, so this is a sample decision rather than an established real-world fraud probability.
 
 ## Worker diagnostics

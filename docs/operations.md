@@ -31,6 +31,8 @@ docker compose exec redis redis-cli XPENDING payment_events risk-workers
 
 The dashboard shows incoming requests, errors, waiting work and events recovered from stopped workers. If the queue keeps growing, workers are falling behind or cannot finish their work; check their logs and readiness.
 
+The operator page refreshes queue status and recent decisions every two seconds while a signing secret is entered. It shows the last successful refresh time and marks displayed values as potentially out of date after a failure. A request that receives no response stops waiting after five seconds. Use **Retry last** for an event with an uncertain outcome; **Send event** creates a new event ID.
+
 ## Configuration
 
 | Variable | Default and purpose |

@@ -18,6 +18,10 @@ docker compose up --build -d
 
 Open [PulseGate](http://localhost:8080). Enter the signing secret from `.env`, send a sample transaction, then replay it. The page shows whether the event was accepted or recognized as a repeat, its eventual decision, and how much work is still waiting.
 
+Use a whole-number sample amount from 0 to 900,000 cents. You can press Enter in the amount field to send it. If a response is lost, choose **Retry last** to reuse that event's ID and data. Editing the form does not change the event used by Replay or Retry last.
+
+The decisions view shows when it last refreshed and labels old values when the connection fails. Clearing the signing secret also clears the displayed decisions.
+
 [Grafana](http://localhost:3000/d/pulsegate-operations/pulsegate-operations) shows the operations dashboard. [Prometheus](http://localhost:9090) collects the measurements behind it. These services are accessible only from your machine in the supplied setup.
 
 Use `docker compose down` to stop the services while preserving Redis data.
