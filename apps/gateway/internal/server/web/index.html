@@ -15,6 +15,10 @@ function validateSample(){
  if(!valid){$('message').textContent='Enter a whole-number amount from 0 to 900,000 cents.';input.focus();input.reportValidity()}
  return valid;
 }
+// submitWithEnter lets keyboard users send from the amount field without duplicate key-repeat requests.
+function submitWithEnter(event){
+ if(event.key==='Enter'&&!event.repeat&&!event.isComposing){event.preventDefault();send()}
+}
 // sample produces the same schema as provider traffic using synthetic values only.
 function sample(){const risky=$('profile').value==='risk';return {event_id:'demo-'+crypto.randomUUID(),amount_cents:Number($('amount').value),currency:'USD',merchant_category:5812,country:risky?'GB':'US',card_present:!risky,hour_utc:risky?2:12,velocity_5m:risky?11:1,velocity_1h:risky?32:2,prior_declines:risky?5:0}}
 // setSending prevents accidental overlapping submissions and makes progress visible.
@@ -123,5 +127,6 @@ async function refresh(){
   $('refresh-note').textContent=reason+(lastRefresh?' Last updated '+lastRefresh+'; displayed values may be out of date.':' No current data available.');
  }finally{refreshing=false;$('refresh').disabled=false;$('refresh').textContent='Refresh'}
 }
+$('amount').onkeydown=submitWithEnter;
 $('send').onclick=()=>send();$('replay').onclick=()=>send(true);$('bad').onclick=()=>send(false,true);$('refresh').onclick=refresh;$('secret').oninput=resetConnection;$('secret').onchange=refresh;$('profile').onchange=()=>{$('amount').value=$('profile').value==='risk'?850000:2500};setInterval(refresh,2000);
 </script></body></html>
